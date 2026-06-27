@@ -859,6 +859,16 @@ Outlets are categorized in the `OutletCategory` table using textbook political s
 - Static until manually reviewed and updated — not dynamically reassigned
 - Applied uniformly to all candidates regardless of party
 
+**Confirmed outlet list (v1):**
+
+| Category | Outlets |
+|---|---|
+| Conservative (right-leaning) | Fox News, Wall Street Journal (opinion), Washington Times, New York Post, The Daily Wire, Breitbart, The Federalist |
+| Liberal (left-leaning) | MSNBC, CNN, NBC News, New York Times, Washington Post, The Guardian US, HuffPost, Vox, Mother Jones |
+| Neutral | ABC News, CBS News, Associated Press, Reuters, NPR, PBS NewsHour, The Hill, C-SPAN, USA Today |
+
+Categorizations are based on academic sources: Groseclose & Milyo ADA-based media bias scoring and Pew Research Center political typology. Every outlet in the `OutletCategory` table must have a `categorization_source` citation.
+
 Open question: Process for keeping the categorization list current as outlets change is not yet defined. See Open Questions section.
 
 ### Article Collection
@@ -1152,7 +1162,7 @@ If the product is extended with an admin dashboard for manual data overrides, or
 
 5. **PaaS hosting selection:** Railway, Render, or DigitalOcean App Platform? All three support managed Postgres and Redis. The selection affects CI/CD setup, environment variable management, and deployment configuration. Recommendation: Railway or Render for simplicity and managed Postgres + Redis in one platform.
 
-6. **Factual Consistency Score algorithm:** The business rules define when the score is shown (10+ votes, incumbents always scored) but the specific algorithm for computing the 0–100 score from voting record vs. stated positions has not been defined. This is a product decision that must be made before implementing the score computation worker. Recommendation: bring to Product Analyst for definition before implementation.
+6. **Factual Consistency Score algorithm:** ~~Undefined.~~ **RESOLVED:** v1 uses a simple proxy score: voting attendance rate (0–40 pts) + filing compliance rate (0–30 pts) + public position documentation (0–30 pts). Labeled "v1 — methodology evolving" on the methodology page. Will be refined in a later cycle once real data patterns are understood.
 
 7. **PostGIS TIGER/Line data loading:** Which specific TIGER/Line shapefiles cover all district types needed (congressional, state senate, state house, county, city, school district, special district)? Some local district types require separate shapefiles. This must be inventoried before the fallback lookup is implemented.
 
@@ -1180,14 +1190,18 @@ If the product is extended with an admin dashboard for manual data overrides, or
 
 The following must be confirmed before any code is written:
 
-- [ ] ORM selected (Prisma vs. Drizzle)
-- [ ] Hosting platform selected (Railway / Render / DigitalOcean)
-- [ ] Initial news outlet list produced and ToS reviews begun
+- [x] ORM selected — **Prisma**
+- [x] Hosting platform selected — **Google Cloud Platform** (Cloud Run, Cloud SQL, Memorystore, Cloud Storage, Cloud Scheduler)
+- [x] Object storage — **Google Cloud Storage** (replaces Cloudflare R2; no egress fees within GCP)
+- [x] Factual Consistency Score algorithm — **v1 proxy: attendance (0–40) + compliance (0–30) + position docs (0–30); labeled evolving**
+- [x] Initial news outlet list confirmed — ToS reviews required before pipeline goes live:
+  - **Conservative (right-leaning):** Fox News, The Wall Street Journal (opinion), The Washington Times, New York Post, The Daily Wire, Breitbart, The Federalist
+  - **Liberal (left-leaning):** MSNBC, CNN, NBC News, The New York Times, The Washington Post, The Guardian US, HuffPost, Vox, Mother Jones
+  - **Neutral:** ABC News, CBS News, Associated Press, Reuters, NPR, PBS NewsHour, The Hill, C-SPAN, USA Today
+  - Categorizations based on academic sources (Groseclose & Milyo ADA-based scoring, Pew Research political typology). All outlets require individual ToS review before entering the scraping pipeline.
 - [ ] Sentiment model selected and validation sample prepared
-- [ ] Factual Consistency Score algorithm defined by Product Analyst
 - [ ] TIGER/Line shapefile inventory completed for all needed district types
 - [ ] Cicero API account and key obtained
 - [ ] FEC API key obtained
-- [ ] S3-compatible storage account set up (Cloudflare R2 or AWS S3)
 
 Implementation will proceed one vertical slice at a time. The recommended first slice is: **Location resolution → District display → Race dashboard** (Epic 1 + Epic 2), as it establishes the core data model and the primary user entry point without requiring the scraping pipeline to be complete.
