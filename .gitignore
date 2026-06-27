@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Claude local/private files
+.claude/settings.local.json
+.claude/tmp/
+.claude/scratch/
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+build/
+coverage/
