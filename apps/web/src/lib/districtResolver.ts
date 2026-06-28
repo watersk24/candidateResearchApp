@@ -68,51 +68,78 @@ async function resolveViaCicero(lat: number, lng: number): Promise<ResolvedDistr
 async function resolveViaPostGIS(lat: number, lng: number): Promise<ResolvedDistrict[]> {
   // Raw query using PostGIS ST_Contains to find all districts whose geometry
   // contains the given point. Requires geometry column populated from TIGER/Line shapefiles.
-  const results = await db.$queryRaw<
-    Array<{
-      id: string;
-      name: string;
-      level: string;
-      district_type: string;
-      jurisdiction_id: string;
-      jurisdiction_name: string;
-      jurisdiction_type: string;
-    }>
-  >`
-    SELECT
-      d.id,
-      d.name,
-      d.level,
-      d.district_type,
-      j.id AS jurisdiction_id,
-      j.name AS jurisdiction_name,
-      j.type AS jurisdiction_type
-    FROM districts d
-    JOIN jurisdictions j ON d.jurisdiction_id = j.id
-    WHERE d.geometry IS NOT NULL
-      AND ST_Contains(
-        ST_SetSRID(ST_GeomFromGeoJSON(d.geometry::text), 4326),
-        ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)
-      )
-    ORDER BY
-      CASE d.level
-        WHEN 'federal' THEN 1
-        WHEN 'state' THEN 2
-        WHEN 'local' THEN 3
-      END
-  `;
+  try {
+    const results = await db.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        level: string;
+        district_type: string;
+        jurisdiction_id: string;
+        jurisdiction_name: string;
+        jurisdiction_type: string;
+      }>
+    >`
+      SELECT
+        d.id,
+        d.name,
+        d.level,
+        d.district_type,
+        j.id AS jurisdiction_id,
+        j.name AS jurisdiction_name,
+        j.type AS jurisdiction_type
+      FROM districts d
+      JOIN jurisdictions j ON d.jurisdiction_id = j.id
+      WHERE d.geometry IS NOT NULL
+        AND ST_Contains(
+          ST_SetSRID(ST_GeomFromGeoJSON(d.geometry::text), 4326),
+          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)
+        )
+      ORDER BY
+        CASE d.level
+          WHEN 'federal' THEN 1
+          WHEN 'state' THEN 2
+          WHEN 'local' THEN 3
+        END
+    `;
 
-  return results.map((r) => ({
-    id: r.id,
-    name: r.name,
-    level: r.level,
-    districtType: r.district_type,
-    jurisdiction: {
-      id: r.jurisdiction_id,
-      name: r.jurisdiction_name,
-      type: r.jurisdiction_type,
-    },
-  }));
+    if (results.length > 0) {
+      return results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        level: r.level,
+        districtType: r.district_type,
+        jurisdiction: {
+          id: r.jurisdiction_id,
+          name: r.jurisdiction_name,
+          type: r.jurisdiction_type,
+        },
+      }));
+    }
+  } catch {
+    // PostGIS not available (e.g. plain postgres in dev)
+  }
+
+  // Dev fallback: return all seeded districts so the UI shows data without PostGIS or Cicero
+  if (process.env.NODE_ENV === "development") {
+    const districts = await db.district.findMany({
+      include: { jurisdiction: true },
+      orderBy: [{ level: "asc" }, { name: "asc" }],
+    });
+    return districts.map((d) => ({
+      id: d.id,
+      name: d.name,
+      level: d.level,
+      districtType: d.districtType,
+      jurisdiction: {
+        id: d.jurisdiction.id,
+        name: d.jurisdiction.name,
+        type: d.jurisdiction.type,
+      },
+    }));
+  }
+
+  return [];
 }
 
 function mapCiceroLevel(level: string): string {

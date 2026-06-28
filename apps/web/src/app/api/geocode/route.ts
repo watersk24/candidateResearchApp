@@ -16,27 +16,29 @@ export async function GET(request: NextRequest) {
 
   const { zip } = parsed.data;
 
-  // Use the Census Geocoder API — free, no key required, US-only
-  const url = `https://geocoding.geo.census.gov/geocoder/locations/address?benchmark=Public_AR_Current&format=json&zip=${zip}&street=&city=&state=`;
+  // Zippopotam.us — free, no key required, US zip code centroids
+  const url = `https://api.zippopotam.us/us/${zip}`;
 
   const res = await fetch(url, { next: { revalidate: 86400 } });
+
+  if (res.status === 404) {
+    return NextResponse.json({ error: "Zip code not found" }, { status: 404 });
+  }
 
   if (!res.ok) {
     return NextResponse.json({ error: "Geocoding service unavailable" }, { status: 502 });
   }
 
   const data = await res.json();
-  const addressMatches = data?.result?.addressMatches;
+  const place = data?.places?.[0];
 
-  if (!addressMatches || addressMatches.length === 0) {
+  if (!place) {
     return NextResponse.json({ error: "Zip code not found" }, { status: 404 });
   }
 
-  const match = addressMatches[0];
-  const { x: lng, y: lat } = match.coordinates;
-  const label = match.addressComponents?.zip
-    ? `${match.addressComponents.city ?? ""}, ${match.addressComponents.state ?? ""}`.trim().replace(/^,\s*/, "")
-    : zip;
+  const lat = parseFloat(place.latitude);
+  const lng = parseFloat(place.longitude);
+  const label = `${place["place name"]}, ${place["state abbreviation"]}`;
 
   return NextResponse.json({ lat, lng, label, zip });
 }
