@@ -1,0 +1,30 @@
+{
+  "name": "candidate-research-app",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/workers"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:workers": "npm run dev --workspace=apps/workers",
+    "build:web": "npm run build --workspace=apps/web",
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
+    "db:push": "prisma db push --schema=prisma/schema.prisma",
+    "db:studio": "prisma studio --schema=prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0"
+  }
+}

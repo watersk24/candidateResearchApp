@@ -23,3 +23,16 @@ __pycache__/
 dist/
 build/
 coverage/
+.next/
+
+# Prisma generated client (regenerated from schema)
+node_modules/.prisma/
+
+# Python
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Docker volumes (local dev only)
+postgres_data/
+redis_data/

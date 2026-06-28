@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum JurisdictionType {
+  federal
+  state
+  county
+  city
+  school_district
+  special_district
+}
+
+enum DistrictLevel {
+  federal
+  state
+  local
+}
+
+enum ElectionType {
+  primary
+  general
+  special
+}
+
+enum ElectionStatus {
+  upcoming
+  active
+  concluded
+}
+
+enum CandidateStatus {
+  active
+  withdrawn
+  elected
+}
+
+enum VoteChoice {
+  yea
+  nay
+  abstain
+  absent
+  present
+}
+
+enum OutletBias {
+  conservative
+  liberal
+  neutral
+}
+
+enum SentimentLabel {
+  positive
+  negative
+  neutral
+}
+
+enum DataStatus {
+  current
+  stale
+  limited
+}
+
+// ─── Core Geographic Entities ────────────────────────────────────────────────
+
+model Jurisdiction {
+  id                         String           @id @default(uuid())
+  name                       String
+  type                       JurisdictionType
+  parentId                   String?          @map("parent_id")
+  fipsCode                   String?          @map("fips_code")
+  ciceroId                   String?          @map("cicero_id")
+  electionOfficialsUrl       String?          @map("election_officials_url")
+  electionOfficialsContactUrl String?         @map("election_officials_contact_url")
+
+  parent      Jurisdiction?  @relation("JurisdictionHierarchy", fields: [parentId], references: [id])
+  children    Jurisdiction[] @relation("JurisdictionHierarchy")
+  districts   District[]
+  accessibilityScores DataAccessibilityScore[]
+
+  @@map("jurisdictions")
+}
+
+model District {
+  id                 String        @id @default(uuid())
+  jurisdictionId     String        @map("jurisdiction_id")
+  name               String
+  level              DistrictLevel
+  districtType       String        @map("district_type")
+  ciceroDistrictId   String?       @map("cicero_district_id")
+  shapefileReference String?       @map("shapefile_reference")
+  geometry           Json?
+
+  jurisdiction Jurisdiction @relation(fields: [jurisdictionId], references: [id])
+  elections    Election[]
+
+  @@map("districts")
+}
+
+// ─── Election & Candidate ────────────────────────────────────────────────────
+
+model Election {
+  id                 String         @id @default(uuid())
+  districtId         String         @map("district_id")
+  name               String
+  electionType       ElectionType   @map("election_type")
+  electionDate       DateTime       @map("election_date") @db.Date
+  filingDeadline     DateTime?      @map("filing_deadline") @db.Date
+  status             ElectionStatus @default(upcoming)
+  electionCycleStart DateTime       @map("election_cycle_start") @db.Date
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  district   District    @relation(fields: [districtId], references: [id])
+  candidates Candidate[]
+
+  @@map("elections")
+}
+
+model Candidate {
+  id              String          @id @default(uuid())
+  electionId      String          @map("election_id")
+  fullName        String          @map("full_name")
+  party           String?
+  status          CandidateStatus @default(active)
+  isIncumbent     Boolean         @default(false) @map("is_incumbent")
+  profileSlug     String          @unique @map("profile_slug")
+  officialWebsiteUrl String?      @map("official_website_url")
+  lastRefreshedAt DateTime?       @map("last_refreshed_at")
+  dataIsStale     Boolean         @default(false) @map("data_is_stale")
+  hasLimitedData  Boolean         @default(false) @map("has_limited_data")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  election             Election               @relation(fields: [electionId], references: [id])
+  votingRecords        VotingRecord[]
+  campaignFinanceRecords CampaignFinanceRecord[]
+  publicStatements     PublicStatement[]
+  legalHistory         LegalHistoryEntry[]
+  businessAffiliations BusinessAffiliation[]
+  newsArticles         NewsArticle[]
+  ratings              CandidateRatings?
+
+  @@map("candidates")
+}
+
+// ─── Candidate Profile Data ───────────────────────────────────────────────────
+
+model VotingRecord {
+  id              String     @id @default(uuid())
+  candidateId     String     @map("candidate_id")
+  billOrMeasure   String     @map("bill_or_measure")
+  vote            VoteChoice
+  voteDate        DateTime   @map("vote_date") @db.Date
+  sourceUrl       String     @map("source_url")
+  sourceAvailable Boolean    @default(true) @map("source_available")
+  collectedAt     DateTime   @default(now()) @map("collected_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("voting_records")
+}
+
+model CampaignFinanceRecord {
+  id                String   @id @default(uuid())
+  candidateId       String   @map("candidate_id")
+  filingPeriod      String   @map("filing_period")
+  totalRaised       Decimal? @map("total_raised") @db.Decimal(15, 2)
+  individualDonorPct Decimal? @map("individual_donor_pct") @db.Decimal(5, 2)
+  pacDonorPct       Decimal? @map("pac_donor_pct") @db.Decimal(5, 2)
+  partyTransferPct  Decimal? @map("party_transfer_pct") @db.Decimal(5, 2)
+  totalSpent        Decimal? @map("total_spent") @db.Decimal(15, 2)
+  filingComplete    Boolean  @default(false) @map("filing_complete")
+  sourceUrl         String   @map("source_url")
+  sourceAvailable   Boolean  @default(true) @map("source_available")
+  collectedAt       DateTime @default(now()) @map("collected_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("campaign_finance_records")
+}
+
+model PublicStatement {
+  id               String   @id @default(uuid())
+  candidateId      String   @map("candidate_id")
+  statementExcerpt String   @map("statement_excerpt")
+  statementDate    DateTime @map("statement_date") @db.Date
+  sourceType       String   @map("source_type")
+  sourceUrl        String   @map("source_url")
+  sourceAvailable  Boolean  @default(true) @map("source_available")
+  collectedAt      DateTime @default(now()) @map("collected_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("public_statements")
+}
+
+model LegalHistoryEntry {
+  id              String   @id @default(uuid())
+  candidateId     String   @map("candidate_id")
+  caseType        String   @map("case_type")
+  caseDate        DateTime @map("case_date") @db.Date
+  jurisdiction    String
+  outcome         String?
+  sourceUrl       String   @map("source_url")
+  sourceAvailable Boolean  @default(true) @map("source_available")
+  collectedAt     DateTime @default(now()) @map("collected_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("legal_history_entries")
+}
+
+model BusinessAffiliation {
+  id                  String   @id @default(uuid())
+  candidateId         String   @map("candidate_id")
+  entityName          String   @map("entity_name")
+  role                String
+  stateOfRegistration String   @map("state_of_registration")
+  sourceUrl           String   @map("source_url")
+  sourceAvailable     Boolean  @default(true) @map("source_available")
+  collectedAt         DateTime @default(now()) @map("collected_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("business_affiliations")
+}
+
+// ─── News & Sentiment ─────────────────────────────────────────────────────────
+
+model NewsOutlet {
+  id       String     @id @default(uuid())
+  name     String     @unique
+  bias     OutletBias
+  domain   String     @unique
+
+  articles NewsArticle[]
+
+  @@map("news_outlets")
+}
+
+model NewsArticle {
+  id           String         @id @default(uuid())
+  candidateId  String         @map("candidate_id")
+  outletId     String         @map("outlet_id")
+  headline     String
+  articleUrl   String         @map("article_url")
+  publishedAt  DateTime       @map("published_at")
+  rawTextPath  String?        @map("raw_text_path")
+  sentiment    SentimentLabel?
+  sentimentScore Float?       @map("sentiment_score")
+  sentimentPositive Float?    @map("sentiment_positive")
+  sentimentNegative Float?    @map("sentiment_negative")
+  sentimentNeutral Float?     @map("sentiment_neutral")
+  analyzedAt   DateTime?      @map("analyzed_at")
+  collectedAt  DateTime       @default(now()) @map("collected_at")
+
+  candidate Candidate  @relation(fields: [candidateId], references: [id])
+  outlet    NewsOutlet @relation(fields: [outletId], references: [id])
+
+  @@map("news_articles")
+}
+
+// ─── Ratings ──────────────────────────────────────────────────────────────────
+
+model CandidateRatings {
+  id                      String   @id @default(uuid())
+  candidateId             String   @unique @map("candidate_id")
+  transparencyScore       Int?     @map("transparency_score")
+  transparencyVotingPct   Int?     @map("transparency_voting_pct")
+  transparencyFinancePct  Int?     @map("transparency_finance_pct")
+  transparencyStatementPct Int?    @map("transparency_statement_pct")
+  transparencyLegalPct    Int?     @map("transparency_legal_pct")
+  sentimentConservative   Float?   @map("sentiment_conservative")
+  sentimentLiberal        Float?   @map("sentiment_liberal")
+  sentimentNeutral        Float?   @map("sentiment_neutral")
+  sentimentArticleCount   Int?     @map("sentiment_article_count")
+  factualConsistencyScore Int?     @map("factual_consistency_score")
+  attendanceScore         Int?     @map("attendance_score")
+  complianceScore         Int?     @map("compliance_score")
+  positionDocScore        Int?     @map("position_doc_score")
+  campaignFinanceScore    Int?     @map("campaign_finance_score")
+  dataStatus              DataStatus @default(limited) @map("data_status")
+  computedAt              DateTime @default(now()) @map("computed_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("candidate_ratings")
+}
+
+model DataAccessibilityScore {
+  id              String   @id @default(uuid())
+  jurisdictionId  String   @map("jurisdiction_id")
+  electionCycle   String   @map("election_cycle")
+  overallScore    Int      @map("overall_score")
+  filingPublic    Boolean  @map("filing_public")
+  machineReadable Boolean  @map("machine_readable")
+  noAuthRequired  Boolean  @map("no_auth_required")
+  timely          Boolean
+  votingRecordsAvailable Boolean @map("voting_records_available")
+  financeDetailed Boolean  @map("finance_detailed")
+  robotsTxtBlocks Boolean  @map("robots_txt_blocks")
+  hasNoDataAtAll  Boolean  @map("has_no_data_at_all")
+  computedAt      DateTime @default(now()) @map("computed_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  jurisdiction Jurisdiction @relation(fields: [jurisdictionId], references: [id])
+
+  @@unique([jurisdictionId, electionCycle])
+  @@map("data_accessibility_scores")
+}
