@@ -2,9 +2,18 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import { db } from "@/lib/db";
 
-export const metadata = { title: "State Data Accessibility Rankings — Candidate Research" };
+export const metadata = { title: "Local Government Accessibility Rankings — Candidate Research" };
 
 export const dynamic = "force-dynamic";
+
+const LOCAL_TYPES = ["county", "city", "school_district", "special_district"] as const;
+
+const TYPE_LABELS: Record<string, string> = {
+  county: "County",
+  city: "City",
+  school_district: "School District",
+  special_district: "Special District",
+};
 
 function scoreColor(score: number): string {
   if (score >= 75) return "text-green-700";
@@ -35,73 +44,49 @@ function Check({ value }: { value: boolean }) {
   );
 }
 
-export default async function RankingsPage() {
+export default async function LocalRankingsPage() {
   const allScores = await db.dataAccessibilityScore.findMany({
     where: { electionCycle: "2026" },
-    include: { jurisdiction: true },
+    include: { jurisdiction: { include: { parent: true } } },
     orderBy: { overallScore: "desc" },
   });
 
-  const scores = allScores.filter((s) => s.jurisdiction.type === "state");
-  const localCount = allScores.filter((s) =>
-    ["county", "city", "school_district", "special_district"].includes(s.jurisdiction.type)
-  ).length;
+  const scores = allScores.filter((s) =>
+    (LOCAL_TYPES as readonly string[]).includes(s.jurisdiction.type)
+  );
 
   return (
     <>
       <Nav />
       <main className="flex-1 mx-auto max-w-5xl px-4 sm:px-6 py-8">
+        {/* Breadcrumb */}
+        <nav className="mb-6 flex items-center gap-1.5 text-sm text-slate-500">
+          <Link href="/rankings" className="hover:text-slate-800">State Rankings</Link>
+          <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+          </svg>
+          <span className="text-slate-800 font-medium">Local Government</span>
+        </nav>
+
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900">State Data Accessibility Rankings</h1>
-              <p className="text-slate-500 text-sm mt-1 max-w-prose">
-                How easy is it to research candidates in each state? We score states on whether
-                election and candidate data is publicly available, machine-readable, accessible
-                without an account, and updated on time.
-              </p>
-            </div>
-            {localCount > 0 && (
-              <Link
-                href="/rankings/local"
-                className="shrink-0 inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 transition-colors"
-              >
-                Local rankings
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                </svg>
-              </Link>
-            )}
-          </div>
+          <h1 className="text-2xl font-semibold text-slate-900">Local Government Accessibility Rankings</h1>
+          <p className="text-slate-500 text-sm mt-1 max-w-prose">
+            County, city, and school district governments scored on how accessible their candidate
+            and election data is to the public.
+          </p>
         </div>
 
-        {/* Legend */}
-        <div className="flex flex-wrap gap-4 mb-6 text-xs text-slate-500">
-          {(["A ≥ 75", "B 50–74", "C 25–49", "D < 25"] as const).map((label) => {
-            const [grade] = label.split(" ");
-            const colors: Record<string, string> = { A: "text-green-700", B: "text-amber-600", C: "text-orange-600", D: "text-red-600" };
-            return (
-              <span key={label} className="flex items-center gap-1">
-                <span className={`font-bold ${colors[grade]}`}>{grade}</span>
-                <span>{label.slice(2)}</span>
-              </span>
-            );
-          })}
-        </div>
-
-        {/* Table */}
         {scores.length === 0 ? (
           <div className="text-center py-20 text-slate-400">
-            <p className="font-medium text-slate-600 mb-1">No state scores yet</p>
+            <p className="font-medium text-slate-600 mb-1">No local scores yet</p>
             <p className="text-sm">Rankings will appear once the data pipeline has run.</p>
           </div>
         ) : (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-            {/* Column headers — hidden on small screens */}
             <div className="hidden md:grid grid-cols-[2rem_1fr_7rem_repeat(6,2.5rem)] gap-x-3 px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-400 uppercase tracking-wide">
               <span>#</span>
-              <span>State</span>
+              <span>Jurisdiction</span>
               <span>Score</span>
               <span title="Data filed publicly">Filed</span>
               <span title="Machine-readable format">CSV/API</span>
@@ -118,12 +103,16 @@ export default async function RankingsPage() {
                     href={`/rankings/${s.jurisdiction.id}`}
                     className="grid grid-cols-[2rem_1fr] md:grid-cols-[2rem_1fr_7rem_repeat(6,2.5rem)] gap-x-3 px-5 py-3.5 hover:bg-slate-50 transition-colors items-center"
                   >
-                    {/* Rank */}
                     <span className="text-sm text-slate-400 tabular-nums">{idx + 1}</span>
 
-                    {/* State name + mobile score */}
                     <div className="min-w-0">
-                      <span className="font-medium text-slate-900 text-sm">{s.jurisdiction.name}</span>
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="font-medium text-slate-900 text-sm">{s.jurisdiction.name}</span>
+                        <span className="text-xs text-slate-400">
+                          {TYPE_LABELS[s.jurisdiction.type] ?? s.jurisdiction.type}
+                          {s.jurisdiction.parent && ` · ${s.jurisdiction.parent.name}`}
+                        </span>
+                      </div>
                       {/* Mobile score bar */}
                       <div className="md:hidden mt-1.5 flex items-center gap-2">
                         <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -138,7 +127,7 @@ export default async function RankingsPage() {
                       </div>
                     </div>
 
-                    {/* Desktop score bar + grade */}
+                    {/* Desktop score */}
                     <div className="hidden md:flex items-center gap-2">
                       <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div
@@ -154,7 +143,6 @@ export default async function RankingsPage() {
                       </span>
                     </div>
 
-                    {/* Criteria checks — desktop only */}
                     <span className="hidden md:block text-center text-sm"><Check value={s.filingPublic} /></span>
                     <span className="hidden md:block text-center text-sm"><Check value={s.machineReadable} /></span>
                     <span className="hidden md:block text-center text-sm"><Check value={s.noAuthRequired} /></span>

@@ -310,6 +310,111 @@ async function main() {
   }
 
   console.log(`Seeded ${candidates.length} candidates across ${elections.length} elections.`);
+
+  // ─── Accessibility scores ─────────────────────────────────────────────────
+
+  console.log("Seeding accessibility data...");
+
+  // Austin ISD as a local jurisdiction
+  await prisma.jurisdiction.upsert({
+    where: { id: "seed-jurisdiction-austin-isd" },
+    update: {},
+    create: {
+      id: "seed-jurisdiction-austin-isd",
+      name: "Austin Independent School District",
+      type: "school_district",
+      parentId: travisJurisdiction.id,
+      electionOfficialsUrl: "https://www.austinisd.org/board-trustees/elections",
+      electionOfficialsContactUrl: "https://www.austinisd.org/contact",
+    },
+  });
+
+  // Additional state jurisdictions for the rankings page
+  const stateJurisdictions = [
+    { id: "seed-jurisdiction-ca", name: "California",  fipsCode: "06", officialsUrl: "https://www.sos.ca.gov/elections",                      contactUrl: "https://www.sos.ca.gov/about/contact" },
+    { id: "seed-jurisdiction-ny", name: "New York",    fipsCode: "36", officialsUrl: "https://elections.ny.gov",                              contactUrl: "https://elections.ny.gov/contact-us" },
+    { id: "seed-jurisdiction-wa", name: "Washington",  fipsCode: "53", officialsUrl: "https://www.sos.wa.gov/elections",                      contactUrl: "https://www.sos.wa.gov/contact" },
+    { id: "seed-jurisdiction-co", name: "Colorado",    fipsCode: "08", officialsUrl: "https://www.sos.state.co.us/pubs/elections/main.html",  contactUrl: "https://www.sos.state.co.us/pubs/aboutUs/contactUs.html" },
+    { id: "seed-jurisdiction-mn", name: "Minnesota",   fipsCode: "27", officialsUrl: "https://www.sos.state.mn.us/elections-voting",          contactUrl: "https://www.sos.state.mn.us/about/contact-us" },
+    { id: "seed-jurisdiction-va", name: "Virginia",    fipsCode: "51", officialsUrl: "https://www.elections.virginia.gov",                   contactUrl: "https://www.elections.virginia.gov/about-the-department/contact-us" },
+    { id: "seed-jurisdiction-fl", name: "Florida",     fipsCode: "12", officialsUrl: "https://dos.fl.gov/elections",                         contactUrl: "https://dos.fl.gov/contact" },
+    { id: "seed-jurisdiction-ga", name: "Georgia",     fipsCode: "13", officialsUrl: "https://sos.ga.gov/elections",                         contactUrl: "https://sos.ga.gov/contact-us" },
+    { id: "seed-jurisdiction-oh", name: "Ohio",        fipsCode: "39", officialsUrl: "https://www.ohiosos.gov/elections",                    contactUrl: "https://www.ohiosos.gov/about/contact-us" },
+    { id: "seed-jurisdiction-tn", name: "Tennessee",   fipsCode: "47", officialsUrl: "https://sos.tn.gov/elections",                         contactUrl: "https://sos.tn.gov/contact" },
+    { id: "seed-jurisdiction-la", name: "Louisiana",   fipsCode: "22", officialsUrl: "https://www.sos.la.gov/ElectionsAndVoting",            contactUrl: "https://www.sos.la.gov/ContactUs" },
+    { id: "seed-jurisdiction-ms", name: "Mississippi", fipsCode: "28", officialsUrl: "https://www.sos.ms.gov/elections-voting",              contactUrl: "https://www.sos.ms.gov/contact" },
+    { id: "seed-jurisdiction-wy", name: "Wyoming",     fipsCode: "56", officialsUrl: "https://sos.wyo.gov/elections",                        contactUrl: "https://sos.wyo.gov/contact" },
+  ];
+
+  for (const s of stateJurisdictions) {
+    await prisma.jurisdiction.upsert({
+      where: { id: s.id },
+      update: {},
+      create: {
+        id: s.id,
+        name: s.name,
+        type: "state",
+        parentId: usJurisdiction.id,
+        fipsCode: s.fipsCode,
+        electionOfficialsUrl: s.officialsUrl,
+        electionOfficialsContactUrl: s.contactUrl,
+      },
+    });
+  }
+
+  // Add contact URLs to Texas
+  await prisma.jurisdiction.update({
+    where: { id: "seed-jurisdiction-tx" },
+    data: {
+      electionOfficialsUrl: "https://www.sos.state.tx.us/elections/index.shtml",
+      electionOfficialsContactUrl: "https://www.sos.state.tx.us/about/contactsos.shtml",
+    },
+  });
+
+  type ScoreInput = {
+    jurisdictionId: string;
+    overallScore: number;
+    filingPublic: boolean;
+    machineReadable: boolean;
+    noAuthRequired: boolean;
+    timely: boolean;
+    votingRecordsAvailable: boolean;
+    financeDetailed: boolean;
+    robotsTxtBlocks: boolean;
+    hasNoDataAtAll: boolean;
+  };
+
+  const accessibilityScores: ScoreInput[] = [
+    // States
+    { jurisdictionId: "seed-jurisdiction-ca",        overallScore: 91, filingPublic: true,  machineReadable: true,  noAuthRequired: true,  timely: true,  votingRecordsAvailable: true,  financeDetailed: true,  robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-ny",        overallScore: 88, filingPublic: true,  machineReadable: true,  noAuthRequired: true,  timely: true,  votingRecordsAvailable: true,  financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-wa",        overallScore: 84, filingPublic: true,  machineReadable: true,  noAuthRequired: true,  timely: false, votingRecordsAvailable: true,  financeDetailed: true,  robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-co",        overallScore: 79, filingPublic: true,  machineReadable: true,  noAuthRequired: true,  timely: true,  votingRecordsAvailable: true,  financeDetailed: false, robotsTxtBlocks: true,  hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-mn",        overallScore: 74, filingPublic: true,  machineReadable: true,  noAuthRequired: true,  timely: true,  votingRecordsAvailable: false, financeDetailed: true,  robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-va",        overallScore: 70, filingPublic: true,  machineReadable: false, noAuthRequired: true,  timely: true,  votingRecordsAvailable: true,  financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-tx",        overallScore: 66, filingPublic: true,  machineReadable: true,  noAuthRequired: true,  timely: false, votingRecordsAvailable: true,  financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-fl",        overallScore: 55, filingPublic: true,  machineReadable: false, noAuthRequired: false, timely: true,  votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: true,  hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-ga",        overallScore: 47, filingPublic: true,  machineReadable: false, noAuthRequired: false, timely: false, votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-oh",        overallScore: 43, filingPublic: true,  machineReadable: false, noAuthRequired: true,  timely: false, votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: true,  hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-tn",        overallScore: 35, filingPublic: true,  machineReadable: false, noAuthRequired: false, timely: false, votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-la",        overallScore: 21, filingPublic: false, machineReadable: false, noAuthRequired: false, timely: false, votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: true,  hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-ms",        overallScore: 14, filingPublic: false, machineReadable: false, noAuthRequired: false, timely: false, votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-wy",        overallScore:  7, filingPublic: false, machineReadable: false, noAuthRequired: false, timely: false, votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: true,  hasNoDataAtAll: true  },
+    // Local
+    { jurisdictionId: "seed-jurisdiction-travis",    overallScore: 62, filingPublic: true,  machineReadable: false, noAuthRequired: true,  timely: true,  votingRecordsAvailable: true,  financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-austin",    overallScore: 71, filingPublic: true,  machineReadable: true,  noAuthRequired: true,  timely: true,  votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+    { jurisdictionId: "seed-jurisdiction-austin-isd", overallScore: 34, filingPublic: true,  machineReadable: false, noAuthRequired: false, timely: false, votingRecordsAvailable: false, financeDetailed: false, robotsTxtBlocks: false, hasNoDataAtAll: false },
+  ];
+
+  for (const score of accessibilityScores) {
+    await prisma.dataAccessibilityScore.upsert({
+      where: { jurisdictionId_electionCycle: { jurisdictionId: score.jurisdictionId, electionCycle: "2026" } },
+      update: {},
+      create: { ...score, electionCycle: "2026" },
+    });
+  }
+
+  console.log(`Seeded ${accessibilityScores.length} accessibility scores.`);
   console.log("Done.");
 }
 
