@@ -1,32 +1,36 @@
 import { Worker } from "bullmq";
-import { redis } from "../lib/redis.js";
+import { bullmqConnection } from "../lib/redis.js";
 import type { ScrapeJobData } from "../queues/scrapeQueue.js";
+import { scrapeVotingRecord } from "../scrapers/votingRecord.js";
+import { scrapeCampaignFinance } from "../scrapers/campaignFinance.js";
+import { scrapeNewsSentiment } from "../scrapers/newsSentiment.js";
 
 export function registerScrapeWorker() {
   return new Worker<ScrapeJobData>(
     "candidate-scrape",
     async (job) => {
       const { candidateId, jobType } = job.data;
-      console.log(`Processing ${jobType} for candidate ${candidateId}`);
+      console.log(`[worker] ${jobType} for candidate ${candidateId}`);
 
-      // TODO: implement per-job-type scrapers
       switch (jobType) {
         case "voting_record":
-          // await scrapeVotingRecord(candidateId);
+          await scrapeVotingRecord(candidateId);
           break;
         case "campaign_finance":
-          // await scrapeCampaignFinance(candidateId);
+          await scrapeCampaignFinance(candidateId);
           break;
         case "news_sentiment":
-          // await scrapeNewsSentiment(candidateId);
+          await scrapeNewsSentiment(candidateId);
           break;
         case "full_refresh":
-          // await scrapeFullRefresh(candidateId);
+          await scrapeVotingRecord(candidateId);
+          await scrapeCampaignFinance(candidateId);
+          await scrapeNewsSentiment(candidateId);
           break;
       }
     },
     {
-      connection: redis,
+      connection: bullmqConnection,
       concurrency: 5,
       limiter: { max: 10, duration: 1000 },
     }

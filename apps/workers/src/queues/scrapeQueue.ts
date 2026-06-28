@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { redis } from "../lib/redis.js";
+import { bullmqConnection } from "../lib/redis.js";
 
 export type ScrapeJobData = {
   candidateId: string;
@@ -8,7 +8,7 @@ export type ScrapeJobData = {
 
 export function createScrapeQueue() {
   return new Queue<ScrapeJobData>("candidate-scrape", {
-    connection: redis,
+    connection: bullmqConnection,
     defaultJobOptions: {
       attempts: 3,
       backoff: { type: "exponential", delay: 5000 },
