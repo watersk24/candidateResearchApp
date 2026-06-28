@@ -78,6 +78,7 @@ type Candidate = {
   party: string | null;
   status: "active" | "withdrawn" | "elected";
   isIncumbent: boolean;
+  profileSlug: string;
   officialWebsiteUrl: string | null;
   lastRefreshedAt: string | null;
   dataIsStale: boolean;
@@ -123,16 +124,24 @@ export default function CandidateProfile({ candidate }: { candidate: Candidate }
     <main className="flex-1">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6">
 
-        {/* Back */}
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 mb-6"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-          </svg>
-          Back to Dashboard
-        </Link>
+        {/* Back + Compare */}
+        <div className="flex items-center justify-between mb-6">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+            </svg>
+            Back to Dashboard
+          </Link>
+          <Link
+            href={`/compare?a=${candidate.profileSlug}`}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Compare →
+          </Link>
+        </div>
 
         {/* Banners */}
         {candidate.status === "withdrawn" && (
