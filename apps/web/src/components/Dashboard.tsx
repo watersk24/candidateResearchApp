@@ -25,10 +25,17 @@ export default function Dashboard({ locationLabel, districts, elections, onRefin
     state: false,
     local: false,
   });
+  const [panelOpen, setPanelOpen] = useState(false);
 
   function toggleLevel(level: Level) {
     setCollapsed((prev) => ({ ...prev, [level]: !prev[level] }));
   }
+
+  const districtsByLevel: Record<Level, ResolvedDistrict[]> = {
+    federal: districts.filter((d) => d.level === "federal"),
+    state: districts.filter((d) => d.level === "state"),
+    local: districts.filter((d) => d.level === "local"),
+  };
 
   const byLevel = Object.fromEntries(
     LEVELS.map((level) => [
@@ -60,19 +67,79 @@ export default function Dashboard({ locationLabel, districts, elections, onRefin
           </div>
 
           {districts.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {districts.slice(0, 8).map((d) => (
-                <span
-                  key={d.id}
-                  className="inline-block text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5"
-                >
-                  {d.name}
-                </span>
-              ))}
-              {districts.length > 8 && (
-                <span className="inline-block text-xs text-slate-400 px-1 py-0.5">
-                  +{districts.length - 8} more
-                </span>
+            <div className="mt-2">
+              <div className="flex flex-wrap gap-1.5">
+                {districts.slice(0, 8).map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => setPanelOpen((v) => !v)}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full px-2.5 py-0.5 transition-colors"
+                  >
+                    {d.name}
+                  </button>
+                ))}
+                {districts.length > 8 && (
+                  <button
+                    onClick={() => setPanelOpen((v) => !v)}
+                    className="text-xs text-blue-600 hover:underline px-1 py-0.5"
+                  >
+                    +{districts.length - 8} more
+                  </button>
+                )}
+              </div>
+
+              {panelOpen && (
+                <div className="mt-3 border border-slate-200 rounded-xl bg-white overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <h2 className="text-sm font-semibold text-slate-800">Your Districts</h2>
+                    <button
+                      onClick={() => setPanelOpen(false)}
+                      aria-label="Close district panel"
+                      className="text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="px-4 py-3 space-y-4">
+                    {(["federal", "state", "local"] as Level[]).map((level) => {
+                      const levelDistricts = districtsByLevel[level];
+                      if (levelDistricts.length === 0) return null;
+                      return (
+                        <div key={level}>
+                          <p className="text-xs font-semibold tracking-widest text-slate-400 uppercase mb-1.5">
+                            {level}
+                          </p>
+                          <ul className="space-y-1">
+                            {levelDistricts.map((d) => (
+                              <li key={d.id} className="text-sm text-slate-700">
+                                {d.name}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex items-start gap-2">
+                    <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                    </svg>
+                    <p className="text-xs text-slate-500">
+                      These districts were resolved from your location. If something looks wrong,{" "}
+                      <button
+                        onClick={() => { setPanelOpen(false); onRefineLocation(); }}
+                        className="text-blue-600 hover:underline"
+                      >
+                        refine your location
+                      </button>{" "}
+                      for a more precise match.
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
           )}
