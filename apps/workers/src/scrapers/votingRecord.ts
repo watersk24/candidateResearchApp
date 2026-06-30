@@ -8,6 +8,12 @@ import {
   type HouseRollCallVote,
   type HouseMemberVote,
 } from "../lib/congress.js";
+import {
+  getSenateVoteMenu,
+  getSenateVoteMemberPositions,
+  type SenateVoteMenuItem,
+  type SenateMemberVote,
+} from "../lib/senate.js";
 
 // Only roll call / recorded votes identify individual members.
 // Voice votes and division votes do not — those are excluded by the API.
@@ -92,6 +98,90 @@ export function toRecords(
     .filter((r): r is NonNullable<typeof r> => r !== null);
 }
 
+// ── Senate helpers ────────────────────────────────────────────────────────────
+
+const SENATE_REQUEST_DELAY_MS = 150;
+
+export interface SenateVoteWithPosition {
+  voteItem: SenateVoteMenuItem;
+  memberVote: SenateMemberVote;
+}
+
+// Matches senator by last name + first-name starts-with, then last-name-only fallback.
+// Senate XML stores "Tammy" not "Tamara", so direct starts-with usually works.
+export function findSenatorInPositions(
+  positions: SenateMemberVote[],
+  fullName: string
+): SenateMemberVote | undefined {
+  const nameLower = fullName.toLowerCase();
+  const lastNameSearch = nameLower.split(" ").at(-1) ?? "";
+  const firstNamesSearch = nameLower.split(" ").slice(0, -1);
+
+  for (const m of positions) {
+    if (m.lastName.toLowerCase() !== lastNameSearch) continue;
+    const firstLower = m.firstName.toLowerCase();
+    const match = firstNamesSearch.some(
+      (fn) => firstLower.startsWith(fn) || fn.startsWith(firstLower.split(" ")[0])
+    );
+    if (match) return m;
+  }
+
+  return positions.find((m) => m.lastName.toLowerCase() === lastNameSearch);
+}
+
+export function senateToRecords(
+  voteHistory: SenateVoteWithPosition[],
+  candidateId: string,
+  congress: number
+) {
+  return voteHistory
+    .map(({ voteItem, memberVote }) => {
+      const voteChoice = mapVoteCast(memberVote.voteCast);
+      if (!voteChoice) return null;
+
+      const voteDate = new Date(voteItem.voteDate);
+      if (isNaN(voteDate.getTime())) return null;
+
+      const billLabel = voteItem.issue || voteItem.title || `Roll Call ${voteItem.rollNumber}`;
+      const uniqueKey = `[${congress}-S-${voteItem.rollNumber}]`;
+
+      return {
+        candidateId,
+        billOrMeasure: `${uniqueKey} ${billLabel}`,
+        vote: voteChoice,
+        voteDate,
+        sourceUrl: voteItem.sourceUrl,
+        sourceAvailable: true as const,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
+async function fetchSenateMemberVoteHistory(
+  fullName: string,
+  congress: number,
+  session: number
+): Promise<SenateVoteWithPosition[]> {
+  const voteMenu = await getSenateVoteMenu(congress, session, RECENT_VOTES_LIMIT);
+  console.log(
+    `[votingRecord] fetched ${voteMenu.length} recent Senate votes for ${congress}/${session}`
+  );
+
+  const results: SenateVoteWithPosition[] = [];
+  for (const voteItem of voteMenu) {
+    // Small delay to avoid hammering Senate.gov
+    await new Promise((r) => setTimeout(r, SENATE_REQUEST_DELAY_MS));
+    const positions = await getSenateVoteMemberPositions(congress, session, voteItem.rollNumber);
+    const memberVote = findSenatorInPositions(positions, fullName);
+    if (memberVote) {
+      results.push({ voteItem, memberVote });
+    }
+  }
+  return results;
+}
+
+// ── Scraper entry point ───────────────────────────────────────────────────────
+
 export async function scrapeVotingRecord(candidateId: string): Promise<void> {
   const candidate = await prisma.candidate.findUnique({
     where: { id: candidateId },
@@ -118,17 +208,29 @@ export async function scrapeVotingRecord(candidateId: string): Promise<void> {
 
   const districtType = candidate.election.district.districtType.toLowerCase();
   const chamber: "house" | "senate" = districtType.includes("senate") ? "senate" : "house";
+  const { congress, session } = getCurrentCongressSession();
 
   if (chamber === "senate") {
-    // Senate roll call votes require Senate.gov XML parsing — not yet implemented.
-    // BullMQ will not retry this as a failure; mark limited data for now.
-    console.warn(
-      `[votingRecord] Senate voting records not yet implemented for "${candidate.fullName}"`
+    const voteHistory = await fetchSenateMemberVoteHistory(candidate.fullName, congress, session);
+    console.log(
+      `[votingRecord] ${voteHistory.length} recorded Senate votes found for "${candidate.fullName}"`
     );
-    await prisma.candidate.update({
-      where: { id: candidateId },
-      data: { hasLimitedData: true, lastRefreshedAt: new Date() },
-    });
+    const records = senateToRecords(voteHistory, candidateId, congress);
+
+    await prisma.$transaction([
+      prisma.votingRecord.deleteMany({ where: { candidateId } }),
+      ...(records.length > 0 ? [prisma.votingRecord.createMany({ data: records })] : []),
+      prisma.candidate.update({
+        where: { id: candidateId },
+        data: {
+          lastRefreshedAt: new Date(),
+          dataIsStale: false,
+          hasLimitedData: records.length === 0,
+        },
+      }),
+    ]);
+
+    console.log(`[votingRecord] stored ${records.length} Senate records for "${candidate.fullName}"`);
     return;
   }
 
@@ -146,8 +248,6 @@ export async function scrapeVotingRecord(candidateId: string): Promise<void> {
   console.log(
     `[votingRecord] "${candidate.fullName}" → ${member.bioguideId} (${member.name})`
   );
-
-  const { congress, session } = getCurrentCongressSession();
 
   // Fetch the most recent N roll call votes and check if member voted on each
   const voteHistory = await fetchHouseMemberVoteHistory(

@@ -34,13 +34,25 @@ const mockCongress = vi.hoisted(() => ({
 
 vi.mock("../../lib/congress.js", () => mockCongress);
 
+// ── Senate API mock ───────────────────────────────────────────────────────────
+const mockSenate = vi.hoisted(() => ({
+  getSenateVoteMenu: vi.fn().mockResolvedValue([]),
+  getSenateVoteMemberPositions: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../../lib/senate.js", () => mockSenate);
+
 import {
   scrapeVotingRecord,
   mapVoteCast,
   toRecords,
+  senateToRecords,
+  findSenatorInPositions,
   type VoteWithPosition,
+  type SenateVoteWithPosition,
 } from "../../scrapers/votingRecord.js";
 import type { HouseRollCallVote, HouseMemberVote } from "../../lib/congress.js";
+import type { SenateVoteMenuItem, SenateMemberVote } from "../../lib/senate.js";
 
 // ── Helper: build a minimal candidate object as Prisma would return it ────────
 function makeFederalHouseCandidate(id = "cand-house-1") {
@@ -85,6 +97,30 @@ function makeFederalSenateCandidate(id = "cand-senate-1") {
         jurisdiction: { id: "jur-1", name: "United States" },
       },
     },
+  };
+}
+
+function makeSenateVoteItem(overrides: Partial<SenateVoteMenuItem> = {}): SenateVoteMenuItem {
+  return {
+    rollNumber: 1,
+    voteDate: "January 03, 2025",
+    issue: "S. 1",
+    question: "On Passage",
+    result: "Passed",
+    title: "A bill to do something",
+    sourceUrl: "https://www.senate.gov/legislative/LIS/roll_call_votes/vote1191/vote_119_1_00001.xml",
+    ...overrides,
+  };
+}
+
+function makeSenateMemberVote(voteCast: string, lastName = "Johnson"): SenateMemberVote {
+  return {
+    lastName,
+    firstName: "Mary",
+    party: "D",
+    state: "TN",
+    voteCast,
+    lisMemberId: "S999",
   };
 }
 
@@ -250,6 +286,8 @@ describe("scrapeVotingRecord", () => {
     mockCongress.getCurrentCongressSession.mockReturnValue({ congress: 119, session: 1 });
     mockCongress.getHouseVoteList.mockResolvedValue([]);
     mockCongress.getHouseVoteMemberPositions.mockResolvedValue([]);
+    mockSenate.getSenateVoteMenu.mockResolvedValue([]);
+    mockSenate.getSenateVoteMemberPositions.mockResolvedValue([]);
   });
 
   it("returns early without touching Congress API for a non-federal candidate", async () => {
@@ -261,13 +299,40 @@ describe("scrapeVotingRecord", () => {
     expect(mockDb.$transaction).not.toHaveBeenCalled();
   });
 
-  it("marks a Senate candidate as hasLimitedData and returns early", async () => {
+  it("fetches Senate votes and runs a transaction for a Senate candidate", async () => {
     mockDb.candidate.findUnique.mockResolvedValue(makeFederalSenateCandidate());
-    mockDb.candidate.update.mockResolvedValue({});
+    const voteItem = makeSenateVoteItem({ rollNumber: 5 });
+    mockSenate.getSenateVoteMenu.mockResolvedValue([voteItem]);
+    mockSenate.getSenateVoteMemberPositions.mockResolvedValue([
+      makeSenateMemberVote("Yea", "Johnson"),
+    ]);
 
     await scrapeVotingRecord("cand-senate-1");
 
     expect(mockCongress.findMemberByName).not.toHaveBeenCalled();
+    expect(mockSenate.getSenateVoteMenu).toHaveBeenCalledWith(119, 1, expect.any(Number));
+    expect(mockDb.$transaction).toHaveBeenCalled();
+    expect(mockDb.votingRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ candidateId: "cand-senate-1", vote: "yea" }),
+        ]),
+      })
+    );
+  });
+
+  it("sets hasLimitedData when no Senate votes match the candidate", async () => {
+    mockDb.candidate.findUnique.mockResolvedValue(makeFederalSenateCandidate());
+    mockSenate.getSenateVoteMenu.mockResolvedValue([makeSenateVoteItem()]);
+    // Member positions don't include the candidate
+    mockSenate.getSenateVoteMemberPositions.mockResolvedValue([
+      makeSenateMemberVote("Yea", "Smith"),
+    ]);
+
+    await scrapeVotingRecord("cand-senate-1");
+
+    expect(mockDb.$transaction).toHaveBeenCalled();
+    expect(mockDb.votingRecord.createMany).not.toHaveBeenCalled();
     expect(mockDb.candidate.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ hasLimitedData: true }),
@@ -367,5 +432,90 @@ describe("scrapeVotingRecord", () => {
     await scrapeVotingRecord("cand-house-1");
 
     expect(mockCongress.findMemberByName).toHaveBeenCalledWith("Jane Doe", "house");
+  });
+});
+
+// ── findSenatorInPositions ────────────────────────────────────────────────────
+describe("findSenatorInPositions", () => {
+  const positions: SenateMemberVote[] = [
+    { lastName: "Smith", firstName: "John", party: "R", state: "TX", voteCast: "Yea", lisMemberId: "S001" },
+    { lastName: "Jones", firstName: "Mary", party: "D", state: "CA", voteCast: "Nay", lisMemberId: "S002" },
+    { lastName: "Brown", firstName: "Robert", party: "D", state: "OH", voteCast: "Not Voting", lisMemberId: "S003" },
+  ];
+
+  it("matches by last name and first name starts-with", () => {
+    const result = findSenatorInPositions(positions, "John Smith");
+    expect(result?.lisMemberId).toBe("S001");
+  });
+
+  it("is case-insensitive", () => {
+    const result = findSenatorInPositions(positions, "john smith");
+    expect(result?.lisMemberId).toBe("S001");
+  });
+
+  it("falls back to last-name-only when first name doesn't match", () => {
+    const result = findSenatorInPositions(positions, "Bob Brown");
+    expect(result?.lisMemberId).toBe("S003");
+  });
+
+  it("returns undefined when no match found", () => {
+    const result = findSenatorInPositions(positions, "Alice Williams");
+    expect(result).toBeUndefined();
+  });
+});
+
+// ── senateToRecords ───────────────────────────────────────────────────────────
+describe("senateToRecords", () => {
+  it("maps a Yea vote to the correct record shape", () => {
+    const history: SenateVoteWithPosition[] = [
+      { voteItem: makeSenateVoteItem({ rollNumber: 10, issue: "S. 42" }), memberVote: makeSenateMemberVote("Yea") },
+    ];
+    const records = senateToRecords(history, "cand-1", 119);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      candidateId: "cand-1",
+      vote: "yea",
+      sourceAvailable: true,
+    });
+  });
+
+  it("includes [congress-S-rollNumber] unique key prefix", () => {
+    const history: SenateVoteWithPosition[] = [
+      { voteItem: makeSenateVoteItem({ rollNumber: 7 }), memberVote: makeSenateMemberVote("Nay") },
+    ];
+    const records = senateToRecords(history, "cand-1", 119);
+    expect(records[0].billOrMeasure).toMatch(/\[119-S-7\]/);
+  });
+
+  it("uses issue as bill label when present", () => {
+    const history: SenateVoteWithPosition[] = [
+      { voteItem: makeSenateVoteItem({ issue: "H.R. 100" }), memberVote: makeSenateMemberVote("Yea") },
+    ];
+    const records = senateToRecords(history, "cand-1", 119);
+    expect(records[0].billOrMeasure).toContain("H.R. 100");
+  });
+
+  it("falls back to title when issue is empty", () => {
+    const history: SenateVoteWithPosition[] = [
+      { voteItem: makeSenateVoteItem({ issue: "", title: "Confirmation of a nominee" }), memberVote: makeSenateMemberVote("Yea") },
+    ];
+    const records = senateToRecords(history, "cand-1", 119);
+    expect(records[0].billOrMeasure).toContain("Confirmation of a nominee");
+  });
+
+  it("excludes entries with null mapVoteCast result", () => {
+    const history: SenateVoteWithPosition[] = [
+      { voteItem: makeSenateVoteItem(), memberVote: makeSenateMemberVote("Unknown") },
+    ];
+    const records = senateToRecords(history, "cand-1", 119);
+    expect(records).toHaveLength(0);
+  });
+
+  it("excludes entries with an unparseable voteDate", () => {
+    const history: SenateVoteWithPosition[] = [
+      { voteItem: makeSenateVoteItem({ voteDate: "not-a-date" }), memberVote: makeSenateMemberVote("Yea") },
+    ];
+    const records = senateToRecords(history, "cand-1", 119);
+    expect(records).toHaveLength(0);
   });
 });
