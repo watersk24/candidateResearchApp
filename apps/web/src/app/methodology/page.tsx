@@ -33,7 +33,7 @@ export default function MethodologyPage() {
               <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">cardiffnlp/twitter-roberta-base-sentiment-latest</code>{" "}
               model on articles from a documented list of outlets. A minimum of 50 articles per outlet
               category is required to display a sentiment score for that category. If coverage is
-              insufficient, "Insufficient coverage data" is shown rather than a potentially misleading score.
+              insufficient, &ldquo;Insufficient coverage data&rdquo; is shown rather than a potentially misleading score.
             </p>
           </section>
 
@@ -43,7 +43,7 @@ export default function MethodologyPage() {
               Measures how well stated positions align with voting record and documented actions.
               For candidates with fewer than 10 documented votes (first-time candidates, short tenure),
               this score is computed from a proxy formula: attendance rate (0–40) + regulatory
-              compliance record (0–30) + documented position statements (0–30). A "Limited Data"
+              compliance record (0–30) + documented position statements (0–30). A &ldquo;Limited Data&rdquo;
               indicator is shown when the proxy is used. As voting record depth grows, the score
               transitions to direct position-to-vote comparison.
             </p>
@@ -65,7 +65,7 @@ export default function MethodologyPage() {
               Scores each state and local government on how well it publishes candidate and election
               data in machine-readable, publicly accessible formats. Criteria: Is filing data public?
               Is it machine-readable? Is it accessible without authentication or fees? Is it timely?
-              Are voting records available? Is campaign finance data detailed? Does the jurisdiction's
+              Are voting records available? Is campaign finance data detailed? Does the jurisdiction&apos;s
               robots.txt block programmatic access to public election data? Jurisdictions that publish
               no data at all score near 0. Scores are benchmarked per election cycle.
             </p>

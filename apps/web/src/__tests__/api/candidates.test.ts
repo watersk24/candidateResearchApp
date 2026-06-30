@@ -151,6 +151,7 @@ describe("GET /api/candidates/[slug]", () => {
       dataStatus: "limited",
       computedAt: new Date("2025-01-01"),
       updatedAt: new Date("2025-01-01"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
 
     mockDb.candidate.findUnique.mockResolvedValue(candidate);
