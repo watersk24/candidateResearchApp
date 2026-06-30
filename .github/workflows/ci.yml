@@ -1,0 +1,168 @@
+name: CI
+
+# Runs on every push and pull request to the active branches.
+# Four jobs run in parallel: lint-and-typecheck, test, security, and
+# (once the first two pass) build.
+on:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+  pull_request:
+    branches:
+      - main
+      - master
+      - dev
+
+# Minimum permissions. No job needs write access.
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+  # Satisfies Prisma schema validation during `prisma generate`.
+  # generate-only: no actual database connection is made.
+  DATABASE_URL: 'postgresql://dummy:dummy@localhost:5432/dummy'
+
+jobs:
+  # ─── Lint and Type Check ──────────────────────────────────────────────────────
+  lint-and-typecheck:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # @prisma/client exports generated model types. TypeScript will error
+      # on any Prisma import if the client has not been generated first.
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=prisma/schema.prisma
+
+      - name: Type check apps/web
+        working-directory: apps/web
+        run: npx tsc --noEmit
+
+      - name: Type check apps/workers
+        working-directory: apps/workers
+        run: npx tsc --noEmit
+
+      # ESLint flat config (eslint.config.mjs) — Next.js core-web-vitals + TypeScript rules.
+      # No ESLint config exists in apps/workers so only web is linted.
+      - name: Lint apps/web
+        run: npm run lint --workspace=apps/web
+
+  # ─── Tests ────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=prisma/schema.prisma
+
+      # Runs apps/workers tests first, then apps/web tests (113 + 14 = 127 tests).
+      # All tests are unit tests with mocked I/O — no real Postgres or Redis needed.
+      # Worker test setup (src/__tests__/setup.ts) provides dummy env vars.
+      - name: Run all tests
+        run: npm run test
+
+  # ─── Build ────────────────────────────────────────────────────────────────────
+  # Runs only after lint and tests pass. Avoids spending build minutes
+  # on code that already fails quality checks.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, test]
+    env:
+      # CI=true is already set by the GitHub Actions runner, but stated explicitly
+      # here so Next.js strict build mode is clearly documented.
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=prisma/schema.prisma
+
+      # next build includes its own TypeScript check and ESLint run.
+      # If any page uses Prisma at static-generation time, this step will fail
+      # because the dummy DATABASE_URL cannot be connected to. In that case,
+      # add `serverExternalPackages: ["@prisma/client"]` (already set) and ensure
+      # that static pages do not run Prisma queries at build time.
+      - name: Build apps/web (Next.js)
+        run: npm run build --workspace=apps/web
+
+      # tsc emits to apps/workers/dist/. No env vars required.
+      - name: Build apps/workers (tsc)
+        run: npm run build --workspace=apps/workers
+
+  # ─── Security ─────────────────────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      # Full history required so gitleaks can scan all commits, not just HEAD.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fails if any high or critical severity vulnerabilities are found across
+      # all npm workspaces. Upgrade or patch before merging.
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+
+      # Downloads the gitleaks binary and scans git history for accidentally
+      # committed secrets (API keys, tokens, connection strings, etc.).
+      # Check https://github.com/gitleaks/gitleaks/releases for newer versions.
+      - name: Install gitleaks
+        run: |
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz" \
+            | tar -xzf - -C /usr/local/bin/ gitleaks
+
+      - name: Scan repository for committed secrets
+        run: gitleaks detect --source . --verbose
+
+      # Branch protection rules to enable in GitHub UI (Settings > Branches):
+      #   - Require status checks to pass before merging
+      #     Required checks: "Lint and Type Check", "Tests"
+      #   - Require pull request reviews before merging
+      #   - Do not allow bypassing the above settings
+      #   - Restrict direct pushes to main/master

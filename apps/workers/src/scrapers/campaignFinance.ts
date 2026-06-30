@@ -1,7 +1,7 @@
 import { prisma } from "../lib/db.js";
 import { searchCandidate, getCandidateTotals, fecProfileUrl, type FecTotals } from "../lib/fec.js";
 
-function inferOffice(districtType: string): "H" | "S" | "P" | undefined {
+export function inferOffice(districtType: string): "H" | "S" | "P" | undefined {
   const lower = districtType.toLowerCase();
   if (lower.includes("house") || lower.includes("congressional")) return "H";
   if (lower.includes("senate")) return "S";
@@ -9,12 +9,12 @@ function inferOffice(districtType: string): "H" | "S" | "P" | undefined {
   return undefined;
 }
 
-function safePercent(numerator: number, denominator: number): number | null {
+export function safePercent(numerator: number, denominator: number): number | null {
   if (!denominator || denominator === 0) return null;
   return Math.round((numerator / denominator) * 10000) / 100; // two decimal places
 }
 
-function toRecord(totals: FecTotals, candidateId: string, sourceUrl: string) {
+export function toRecord(totals: FecTotals, candidateId: string, sourceUrl: string) {
   const { receipts, disbursements } = totals;
   return {
     candidateId,

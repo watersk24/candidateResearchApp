@@ -13,7 +13,7 @@ import {
 // Voice votes and division votes do not — those are excluded by the API.
 const RECENT_VOTES_LIMIT = 50;
 
-function mapVoteCast(voteCast: string): VoteChoice | null {
+export function mapVoteCast(voteCast: string): VoteChoice | null {
   switch (voteCast.toLowerCase()) {
     case "yea":
     case "aye":
@@ -30,7 +30,7 @@ function mapVoteCast(voteCast: string): VoteChoice | null {
   }
 }
 
-interface VoteWithPosition {
+export interface VoteWithPosition {
   vote: HouseRollCallVote;
   memberVote: HouseMemberVote;
 }
@@ -62,7 +62,7 @@ async function fetchHouseMemberVoteHistory(
   return results;
 }
 
-function toRecords(
+export function toRecords(
   voteHistory: VoteWithPosition[],
   candidateId: string
 ) {
