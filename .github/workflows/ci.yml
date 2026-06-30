@@ -106,13 +106,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      # npm install (not npm ci) so npm resolves platform-specific optional deps
+      # (e.g. @tailwindcss/oxide-linux-x64-gnu) that the Windows lockfile omits.
       - name: Install dependencies
-        run: npm ci
-
-      # Tailwind CSS v4 ships platform-specific native bindings via optional deps.
-      # package-lock.json generated on Windows omits the Linux binary; rebuild restores it.
-      - name: Rebuild native modules for Linux
-        run: npm rebuild --workspace=apps/web
+        run: npm install
 
       - name: Generate Prisma client
         run: npx prisma generate --schema=prisma/schema.prisma
