@@ -4,6 +4,7 @@ import type { ScrapeJobData } from "../queues/scrapeQueue.js";
 import { scrapeVotingRecord } from "../scrapers/votingRecord.js";
 import { scrapeCampaignFinance } from "../scrapers/campaignFinance.js";
 import { scrapeNewsSentiment } from "../scrapers/newsSentiment.js";
+import { computeRatings } from "../scrapers/computeRatings.js";
 
 export function registerScrapeWorker() {
   return new Worker<ScrapeJobData>(
@@ -22,10 +23,14 @@ export function registerScrapeWorker() {
         case "news_sentiment":
           await scrapeNewsSentiment(candidateId);
           break;
+        case "compute_ratings":
+          await computeRatings(candidateId);
+          break;
         case "full_refresh":
           await scrapeVotingRecord(candidateId);
           await scrapeCampaignFinance(candidateId);
           await scrapeNewsSentiment(candidateId);
+          await computeRatings(candidateId);
           break;
       }
     },

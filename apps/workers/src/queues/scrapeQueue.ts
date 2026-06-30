@@ -3,7 +3,7 @@ import { bullmqConnection } from "../lib/redis.js";
 
 export type ScrapeJobData = {
   candidateId: string;
-  jobType: "voting_record" | "campaign_finance" | "news_sentiment" | "full_refresh";
+  jobType: "voting_record" | "campaign_finance" | "news_sentiment" | "compute_ratings" | "full_refresh";
 };
 
 export function createScrapeQueue() {
