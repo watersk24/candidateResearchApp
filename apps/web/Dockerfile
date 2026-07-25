@@ -16,6 +16,12 @@ COPY package.json package-lock.json ./
 COPY apps/web ./apps/web
 COPY prisma ./prisma
 
+# npm workspaces can place a dependency in the workspace's own node_modules
+# instead of hoisting it to the root (next is nested under apps/web/node_modules
+# per package-lock.json). The COPY above overwrites apps/web with plain source,
+# so the workspace-local node_modules from the deps stage must be restored after.
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+
 # Tailwind CSS v4 ships platform-specific native bindings via optional deps.
 # package-lock.json generated on Windows omits the Linux binary; rebuild restores it.
 RUN npm rebuild --workspace=apps/web
