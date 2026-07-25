@@ -14,6 +14,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
 COPY apps/web ./apps/web
 COPY prisma ./prisma
+
+# Tailwind CSS v4 ships platform-specific native bindings via optional deps.
+# package-lock.json generated on Windows omits the Linux binary; rebuild restores it.
+RUN npm rebuild --workspace=apps/web
+
 RUN npx prisma generate --schema=prisma/schema.prisma
 RUN npm run build --workspace=apps/web
 
