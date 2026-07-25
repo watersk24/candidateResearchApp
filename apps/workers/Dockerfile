@@ -3,6 +3,7 @@ FROM node:24-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY apps/workers/package.json ./apps/workers/
+COPY apps/web/package.json ./apps/web/
 COPY package.json package-lock.json ./
 RUN npm ci --workspace=apps/workers
 
