@@ -11,6 +11,7 @@ RUN npm ci --workspace=apps/web
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
 COPY apps/web ./apps/web
 COPY prisma ./prisma
 RUN npx prisma generate --schema=prisma/schema.prisma

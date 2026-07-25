@@ -9,6 +9,7 @@ RUN npm ci --workspace=apps/workers
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
 COPY apps/workers ./apps/workers
 COPY prisma ./prisma
 RUN npx prisma generate --schema=prisma/schema.prisma
