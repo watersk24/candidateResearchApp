@@ -86,18 +86,18 @@ jobs:
         run: npm run test
 
   # ─── Build ────────────────────────────────────────────────────────────────────
-  # NOTE: next build is skipped in CI. @tailwindcss/oxide ships platform-specific
-  # native binaries via npm optionalDependencies; the lockfile generated on Windows
-  # does not record the Linux binary, causing the build to fail on ubuntu-latest
-  # regardless of npm ci vs npm install. TypeScript type checking (tsc --noEmit)
-  # in the lint-and-typecheck job catches the same compilation errors. next build
-  # runs correctly on the deployment platform (Vercel/Railway) which manages its
-  # own install. Re-add this job if/when the project switches to pnpm or the
-  # lockfile is regenerated from a Linux environment.
+  # Runs only after lint and tests pass. Avoids spending build minutes
+  # on code that already fails quality checks.
+  #
+  # NOTE: package-lock.json must be generated on Linux. @tailwindcss/oxide ships
+  # platform-specific native binaries as optionalDependencies, and a lockfile
+  # generated on Windows omits the Linux binary, so `next build` fails here.
   build:
-    name: Build (workers tsc)
+    name: Build
     runs-on: ubuntu-latest
     needs: [lint-and-typecheck, test]
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -112,6 +112,11 @@ jobs:
 
       - name: Generate Prisma client
         run: npx prisma generate --schema=prisma/schema.prisma
+
+      # Pages must not run Prisma queries at build time: the dummy DATABASE_URL
+      # cannot be connected to.
+      - name: Build apps/web (Next.js)
+        run: npm run build --workspace=apps/web
 
       # tsc emits to apps/workers/dist/. No env vars required.
       - name: Build apps/workers (tsc)
