@@ -108,7 +108,7 @@ Races and candidates come from free public sources behind a provider interface k
 Known limitations:
 - Incumbency is unknown for imported candidates (the NCSBE listing doesn't report it); the UI does not claim either way.
 - Most NC municipal elections are held in odd years, so few city races appear in 2026.
-- Imports run manually; daily scheduled refresh is planned (Slice 3).
+- In production, NC imports run daily at 6:00 AM Eastern (Cloud Scheduler → `ingest-races` Cloud Run Job), for the 2026-11-03 general election only; the date must be changed for later elections. See [race import operations](docs/release/race-import-operations.md).
 - Primary elections are not imported yet (party primaries need `party_contest` handling).
 - A correction to a candidate's ballot name creates a new candidate record and withdraws the old one, losing its enrichment data.
 - `/api/districts` and `/api/geocode` have no rate limiting yet (required by ADR-006; planned at the edge, e.g. Cloud Armor).

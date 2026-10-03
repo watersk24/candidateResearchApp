@@ -123,8 +123,14 @@ Fails the federal-to-local goal, but is what users outside a pilot state will se
 - **Stale status.** `/api/races` filters on `electionDate >= today` in addition to stored status.
 - **Census lookups** use coordinates rounded to 4 decimals (≈11 m) so the response cache can't be trivially bypassed. Per-IP rate limiting (ADR-006) is still outstanding and should be added at the edge.
 
+## Slice 3: scheduled refresh (2026-10-03)
+
+- The NC import runs daily at 06:00 America/New_York: Cloud Scheduler job `ingest-races-daily` calls the Cloud Run Jobs API to run `ingest-races`, authenticating as service account `ingest-scheduler`, whose only role is `roles/run.invoker` on that job.
+- Daily answers the former open question on refresh cadence. NCSBE updates the file as candidates withdraw or are replaced; a day's delay is acceptable for a research tool.
+- Failures are surfaced, not retried: the job has `--max-retries=0`, and Cloud Monitoring emails on a failed execution (including a mass-withdrawal guard stop) or on a Scheduler trigger error.
+- The election date (`2026-11-03`) is fixed in the job's arguments. Supporting later elections needs either a job update per election or a "next upcoming election" mode in the CLI.
+
 ## Open Questions
 
-- Refresh cadence for the NC candidate file (it is updated as candidates withdraw or are replaced) — daily is assumed.
 - Should split-precinct ambiguity be resolved by asking for a street address?
 - Retention of concluded elections and their candidates after results are certified.
