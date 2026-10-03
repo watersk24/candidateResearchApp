@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { OCD_US, ocdSegment, ocdState } from "./ocd";
 
 export type ResolvedDistrict = {
   id: string;
@@ -12,140 +13,110 @@ export type ResolvedDistrict = {
   };
 };
 
-/**
- * Resolve voting districts for a lat/lng coordinate.
- * Primary: Cicero API
- * Fallback: PostGIS spatial query against stored TIGER/Line geometries
- */
-export async function resolveDistricts(lat: number, lng: number): Promise<ResolvedDistrict[]> {
-  if (process.env.CICERO_API_KEY) {
-    try {
-      return await resolveViaCicero(lat, lng);
-    } catch (error) {
-      console.warn("Cicero API failed, falling back to PostGIS:", error);
-    }
-  }
+// U.S. Census Geocoder: free, no key. Returns the Census geographies (state,
+// congressional and state legislative districts, county, place, ...) that
+// contain a coordinate (ADR-008).
+const CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates";
+const CENSUS_TIMEOUT_MS = 8_000;
 
-  return resolveViaPostGIS(lat, lng);
+type CensusGeography = { GEOID?: string; BASENAME?: string; STUSAB?: string };
+type CensusGeographies = Record<string, CensusGeography[] | undefined>;
+
+/** Census district code → OCD segment: "03" → "3"; "ZZZ" (undefined area) → null. */
+function districtCode(geoid: string | undefined): string | null {
+  if (!geoid || geoid.length <= 2) return null;
+  const code = geoid.slice(2).replace(/^0+/, "").toLowerCase();
+  return code && !/^z+$/.test(code) ? code : null;
 }
 
-async function resolveViaCicero(lat: number, lng: number): Promise<ResolvedDistrict[]> {
-  const url = `https://www.cicerodata.com/api/v1/official?lat=${lat}&lon=${lng}&key=${process.env.CICERO_API_KEY}&type=NATIONAL_LOWER,NATIONAL_UPPER,STATE_LOWER,STATE_UPPER,LOCAL`;
+/**
+ * Converts a Census Geocoder `geographies` object to OCD division IDs.
+ * Layer names carry a vintage prefix (e.g. "120th Congressional Districts",
+ * "2026 State Legislative Districts - Upper"), so they are matched by suffix.
+ */
+export function censusToOcdIds(geographies: CensusGeographies): string[] {
+  const layer = (pattern: RegExp): CensusGeography | undefined => {
+    const keys = Object.keys(geographies)
+      .filter((k) => pattern.test(k))
+      // Prefer the newest vintage when several are returned
+      .sort((a, b) => (parseInt(b, 10) || 0) - (parseInt(a, 10) || 0));
+    return keys.length > 0 ? geographies[keys[0]]?.[0] : undefined;
+  };
 
-  const response = await fetch(url, { next: { revalidate: 86400 } });
+  const state = layer(/^States$/)?.STUSAB;
+  if (!state) return [];
 
+  const base = ocdState(state);
+  const ids = [OCD_US, base];
+
+  // An at-large congressional district ("00") is the state itself, already included
+  const cd = districtCode(layer(/Congressional Districts$/)?.GEOID);
+  if (cd) ids.push(`${base}/cd:${cd}`);
+
+  const upper = districtCode(layer(/State Legislative Districts - Upper$/)?.GEOID);
+  if (upper) ids.push(`${base}/sldu:${upper}`);
+
+  const lower = districtCode(layer(/State Legislative Districts - Lower$/)?.GEOID);
+  if (lower) ids.push(`${base}/sldl:${lower}`);
+
+  const county = layer(/^Counties$/)?.BASENAME;
+  if (county) ids.push(`${base}/county:${ocdSegment(county)}`);
+
+  const place = layer(/^Incorporated Places$/)?.BASENAME;
+  if (place) ids.push(`${base}/place:${ocdSegment(place)}`);
+
+  return ids;
+}
+
+// 4 decimal places ≈ 11 m: far finer than any district boundary we resolve,
+// coarse enough that the response cache is reused and can't be trivially
+// bypassed with tiny coordinate changes.
+function roundCoord(value: number): string {
+  return value.toFixed(4);
+}
+
+async function lookupOcdIds(lat: number, lng: number): Promise<string[]> {
+  const params = new URLSearchParams({
+    x: roundCoord(lng),
+    y: roundCoord(lat),
+    benchmark: "Public_AR_Current",
+    vintage: "Current_Current",
+    layers: "all",
+    format: "json",
+  });
+
+  const response = await fetch(`${CENSUS_GEOCODER_URL}?${params}`, {
+    next: { revalidate: 86400 },
+    signal: AbortSignal.timeout(CENSUS_TIMEOUT_MS),
+  });
   if (!response.ok) {
-    throw new Error(`Cicero API error: ${response.status}`);
+    throw new Error(`Census geocoder error: ${response.status}`);
   }
 
   const data = await response.json();
-
-  // Cicero returns officials; extract their districts and upsert into our DB
-  const districts: ResolvedDistrict[] = [];
-
-  for (const official of data?.response?.results?.officials ?? []) {
-    const office = official.office;
-    if (!office) continue;
-
-    // Upsert jurisdiction + district into our database for future use
-    // (abbreviated; full upsert logic goes in a dedicated service)
-    districts.push({
-      id: office.district?.id?.toString() ?? "",
-      name: office.title ?? office.name ?? "Unknown District",
-      level: mapCiceroLevel(office.level),
-      districtType: office.chamber ?? office.district_type ?? "unknown",
-      jurisdiction: {
-        id: office.district?.state ?? "",
-        name: office.district?.state ?? "Unknown",
-        type: mapCiceroLevel(office.level),
-      },
-    });
-  }
-
-  return districts;
+  return censusToOcdIds(data?.result?.geographies ?? {});
 }
 
-async function resolveViaPostGIS(lat: number, lng: number): Promise<ResolvedDistrict[]> {
-  // Raw query using PostGIS ST_Contains to find all districts whose geometry
-  // contains the given point. Requires geometry column populated from TIGER/Line shapefiles.
-  try {
-    const results = await db.$queryRaw<
-      Array<{
-        id: string;
-        name: string;
-        level: string;
-        district_type: string;
-        jurisdiction_id: string;
-        jurisdiction_name: string;
-        jurisdiction_type: string;
-      }>
-    >`
-      SELECT
-        d.id,
-        d.name,
-        d.level,
-        d.district_type,
-        j.id AS jurisdiction_id,
-        j.name AS jurisdiction_name,
-        j.type AS jurisdiction_type
-      FROM districts d
-      JOIN jurisdictions j ON d.jurisdiction_id = j.id
-      WHERE d.geometry IS NOT NULL
-        AND ST_Contains(
-          ST_SetSRID(ST_GeomFromGeoJSON(d.geometry::text), 4326),
-          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)
-        )
-      ORDER BY
-        CASE d.level
-          WHEN 'federal' THEN 1
-          WHEN 'state' THEN 2
-          WHEN 'local' THEN 3
-        END
-    `;
+/** Resolves every district we hold races for that contains the coordinate. */
+export async function resolveDistricts(lat: number, lng: number): Promise<ResolvedDistrict[]> {
+  const ocdIds = await lookupOcdIds(lat, lng);
+  if (ocdIds.length === 0) return [];
 
-    if (results.length > 0) {
-      return results.map((r) => ({
-        id: r.id,
-        name: r.name,
-        level: r.level,
-        districtType: r.district_type,
-        jurisdiction: {
-          id: r.jurisdiction_id,
-          name: r.jurisdiction_name,
-          type: r.jurisdiction_type,
-        },
-      }));
-    }
-  } catch {
-    // PostGIS not available (e.g. plain postgres in dev)
-  }
+  const districts = await db.district.findMany({
+    where: { ocdId: { in: ocdIds } },
+    include: { jurisdiction: true },
+    orderBy: [{ level: "asc" }, { name: "asc" }],
+  });
 
-  // Dev fallback: return all seeded districts so the UI shows data without PostGIS or Cicero
-  if (process.env.NODE_ENV === "development") {
-    const districts = await db.district.findMany({
-      include: { jurisdiction: true },
-      orderBy: [{ level: "asc" }, { name: "asc" }],
-    });
-    return districts.map((d) => ({
-      id: d.id,
-      name: d.name,
-      level: d.level,
-      districtType: d.districtType,
-      jurisdiction: {
-        id: d.jurisdiction.id,
-        name: d.jurisdiction.name,
-        type: d.jurisdiction.type,
-      },
-    }));
-  }
-
-  return [];
-}
-
-function mapCiceroLevel(level: string): string {
-  if (!level) return "local";
-  const l = level.toUpperCase();
-  if (l.includes("NATIONAL")) return "federal";
-  if (l.includes("STATE")) return "state";
-  return "local";
+  return districts.map((d) => ({
+    id: d.id,
+    name: d.name,
+    level: d.level,
+    districtType: d.districtType,
+    jurisdiction: {
+      id: d.jurisdiction.id,
+      name: d.jurisdiction.name,
+      type: d.jurisdiction.type,
+    },
+  }));
 }

@@ -77,7 +77,7 @@ type Candidate = {
   fullName: string;
   party: string | null;
   status: "active" | "withdrawn" | "elected";
-  isIncumbent: boolean;
+  isIncumbent: boolean | null; // null = unknown
   profileSlug: string;
   officialWebsiteUrl: string | null;
   lastRefreshedAt: string | null;
@@ -296,7 +296,7 @@ export default function CandidateProfile({ candidate }: { candidate: Candidate }
           {candidate.votingRecords.length === 0 ? (
             <EmptyState>
               No voting record available.{" "}
-              {!candidate.isIncumbent
+              {candidate.isIncumbent === false
                 ? "This candidate has not previously held office."
                 : "No voting record data is available from public sources."}
             </EmptyState>
@@ -805,7 +805,7 @@ function RatingPopup({
                 <p className="text-xs text-slate-600">
                   This candidate has fewer than 10 recorded votes. A Factual Consistency Score
                   requires a minimum of 10 votes to calculate reliably.
-                  {!candidate.isIncumbent && " This candidate is not an incumbent."}
+                  {candidate.isIncumbent === false && " This candidate is not an incumbent."}
                 </p>
               </>
             ) : (

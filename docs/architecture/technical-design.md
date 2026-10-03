@@ -256,7 +256,7 @@ Represents a geographic government unit at any level.
 | type | Enum | federal, state, county, city, school_district, special_district |
 | parent_id | UUID (nullable) | References another Jurisdiction (e.g., county's parent is state) |
 | fips_code | String (nullable) | Census FIPS code for matching to geographic data |
-| cicero_id | String (nullable) | Cicero API reference ID |
+| ocd_id | String (nullable, unique) | Open Civic Data division ID, e.g. `ocd-division/country:us/state:nc` (ADR-008; replaces `cicero_id`) |
 | election_officials_url | String (nullable) | Link to jurisdiction's election officials page |
 | election_officials_contact_url | String (nullable) | Direct contact page |
 
@@ -272,10 +272,25 @@ A specific electoral district within a jurisdiction. A jurisdiction may contain 
 | jurisdiction_id | UUID | Foreign key to Jurisdiction |
 | name | String | "US House — District 7", "State Senate District 22" |
 | level | Enum | federal, state, local |
-| district_type | String | "congressional", "state_senate", "state_house", "county_commission", etc. |
-| cicero_district_id | String (nullable) | Cicero API reference |
-| shapefile_reference | String (nullable) | Reference to Census TIGER/Line geometry if Cicero is unavailable |
-| geometry | GeoJSON (JSONB, nullable) | Stored boundary polygon for fallback lookup |
+| district_type | String | "senate", "congressional" (federal); "state_senate", "state_house", "statewide" (state); "county", "municipal" (local) |
+| ocd_id | String (nullable) | Open Civic Data division ID (ADR-008; replaces `cicero_district_id`). Unique together with `district_type`, since one division can host several offices (US Senate and NC Supreme Court both cover `.../state:nc`) |
+| shapefile_reference | String (nullable) | Unused (TIGER/PostGIS fallback deferred by ADR-008) |
+| geometry | GeoJSON (JSONB, nullable) | Unused (see above) |
+
+---
+
+#### ExternalRef
+
+Links an election or candidate to its ID in an external data source (ADR-008). One entity can have refs from several sources; a candidate whose ref isn't seen in an import run is marked withdrawn.
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID | |
+| entity_type | String | "election" or "candidate" |
+| entity_id | UUID | ID of the election or candidate (no foreign key; polymorphic) |
+| source | String | "ncsbe", later "fec", ... |
+| external_id | String | Source's identifier; unique with `source` |
+| last_seen_at | Timestamp | Updated every import run that lists the entity |
 
 ---
 
@@ -309,7 +324,7 @@ A person running in an election.
 | full_name | String | |
 | party | String (nullable) | "D", "R", "I", "L", "G", etc. |
 | status | Enum | active, withdrawn, elected |
-| is_incumbent | Boolean | Used for Factual Consistency Score rule |
+| is_incumbent | Boolean (nullable) | Used for Factual Consistency Score rule. `null` = unknown (some sources, e.g. NCSBE, don't report it); the UI only says "not an incumbent" when this is `false` |
 | profile_slug | String (unique) | Stable URL segment: e.g., "jane-smith-co-us-senate-2026" |
 | official_website_url | String (nullable) | Candidate's own site — labeled as self-promotional, not used as factual source |
 | last_refreshed_at | Timestamp (nullable) | Last successful data refresh |

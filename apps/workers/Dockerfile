@@ -24,6 +24,8 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 worker
 
 COPY --from=builder /app/node_modules ./node_modules
+# package.json carries "type": "module"; without it Node parses dist/ as CommonJS
+COPY --from=builder /app/apps/workers/package.json ./apps/workers/package.json
 COPY --from=builder /app/apps/workers/dist ./apps/workers/dist
 
 USER worker

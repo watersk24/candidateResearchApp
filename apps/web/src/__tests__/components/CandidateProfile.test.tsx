@@ -226,6 +226,12 @@ describe("CandidateProfile voting record", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not claim the candidate never held office when incumbency is unknown (null)", () => {
+    render(<CandidateProfile candidate={baseCandidate({ isIncumbent: null, votingRecords: [] }) as never} />);
+    expect(screen.getByText(/No voting record data is available from public sources/)).toBeInTheDocument();
+    expect(screen.queryByText(/has not previously held office/)).not.toBeInTheDocument();
+  });
+
   it("does not show the 'Show all' toggle with 5 or fewer voting records", () => {
     const votingRecords = Array.from({ length: 5 }, (_, i) => makeVotingRecord(i));
     render(<CandidateProfile candidate={baseCandidate({ votingRecords }) as never} />);

@@ -193,9 +193,15 @@ export default function Dashboard({ locationLabel, districts, elections, onRefin
         )}
 
         {/* Footer */}
-        <p className="text-xs text-slate-400 mt-12 pb-8">
-          Data refreshed daily. All data sourced from government and public records.
-        </p>
+        <div className="text-xs text-slate-400 mt-12 pb-8 space-y-1">
+          <p>
+            Coverage is currently limited to North Carolina: federal, statewide, NC General
+            Assembly, county-wide offices, and at-large town and city races. School boards,
+            judicial and district attorney races, and district- or ward-based local seats are
+            not shown yet.
+          </p>
+          <p>All data sourced from government and public records.</p>
+        </div>
       </div>
     </main>
   );

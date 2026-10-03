@@ -76,7 +76,8 @@ model Jurisdiction {
   type                       JurisdictionType
   parentId                   String?          @map("parent_id")
   fipsCode                   String?          @map("fips_code")
-  ciceroId                   String?          @map("cicero_id")
+  // Open Civic Data division ID, e.g. "ocd-division/country:us/state:nc" (ADR-008)
+  ocdId                      String?          @unique @map("ocd_id")
   electionOfficialsUrl       String?          @map("election_officials_url")
   electionOfficialsContactUrl String?         @map("election_officials_contact_url")
 
@@ -94,13 +95,18 @@ model District {
   name               String
   level              DistrictLevel
   districtType       String        @map("district_type")
-  ciceroDistrictId   String?       @map("cicero_district_id")
+  // Open Civic Data division ID (ADR-008). Unique together with districtType because
+  // one division can host several offices, e.g. US Senate and NC Supreme Court both
+  // cover ocd-division/country:us/state:nc.
+  ocdId              String?       @map("ocd_id")
   shapefileReference String?       @map("shapefile_reference")
   geometry           Json?
 
   jurisdiction Jurisdiction @relation(fields: [jurisdictionId], references: [id])
   elections    Election[]
 
+  @@unique([ocdId, districtType])
+  @@index([ocdId])
   @@map("districts")
 }
 
@@ -130,7 +136,8 @@ model Candidate {
   fullName        String          @map("full_name")
   party           String?
   status          CandidateStatus @default(active)
-  isIncumbent     Boolean         @default(false) @map("is_incumbent")
+  // null = unknown; some sources (e.g. the NCSBE candidate listing) don't report incumbency
+  isIncumbent     Boolean?        @map("is_incumbent")
   profileSlug     String          @unique @map("profile_slug")
   officialWebsiteUrl String?      @map("official_website_url")
   lastRefreshedAt DateTime?       @map("last_refreshed_at")
@@ -149,6 +156,24 @@ model Candidate {
   ratings              CandidateRatings?
 
   @@map("candidates")
+}
+
+// ─── Data Provenance ──────────────────────────────────────────────────────────
+
+// Links an election or candidate to the ID it has in an external data source
+// (ADR-008). One entity can have refs from several sources.
+model ExternalRef {
+  id         String   @id @default(uuid())
+  entityType String   @map("entity_type") // "election" | "candidate"
+  entityId   String   @map("entity_id")
+  source     String // "ncsbe" | "fec" | ...
+  externalId String   @map("external_id")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([source, externalId])
+  @@index([entityType, entityId])
+  @@map("external_refs")
 }
 
 // ─── Candidate Profile Data ───────────────────────────────────────────────────

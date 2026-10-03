@@ -47,6 +47,16 @@ async function main() {
   }
   console.log(`Seeded ${NEWS_OUTLETS.length} news outlets.`);
 
+  // Everything below is FICTIONAL demo data (Austin, TX candidates and made-up
+  // accessibility scores). It must never be loaded into production (ADR-008).
+  if (process.env.SEED_DEV_FIXTURES !== "true") {
+    console.log("Skipping fictional dev fixtures (set SEED_DEV_FIXTURES=true to load them).");
+    return;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Refusing to load fictional dev fixtures with NODE_ENV=production");
+  }
+
   // ─── Dev seed: Austin, TX jurisdictions, districts, elections, candidates ───
 
   console.log("Seeding jurisdictions...");

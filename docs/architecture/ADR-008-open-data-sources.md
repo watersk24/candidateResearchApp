@@ -36,7 +36,7 @@ Schema changes:
 
 **Elsewhere:** the U.S. Census Geocoder (`geographies/coordinates`, free, no key) returns congressional, state legislative, county, place, and school districts, converted to OCD-IDs. Verified 2026-10-03: a single call for downtown Austin, TX returned CD-10 (120th Congress, i.e. the 2026 maps), SD-14, HD-49, Travis County, City of Austin, and Austin ISD.
 
-If `CICERO_API_KEY` is set, Cicero may be used instead (the ADR-007 path, retained as an optional provider).
+Cicero may be added later as an optional provider. The previous Cicero code path was removed in Slice 1: it returned Cicero's own district IDs, which never matched database rows, so races could not have been found through it.
 
 ### 3. Races and candidates: providers behind one interface
 
@@ -113,6 +113,15 @@ Fails the federal-to-local goal, but is what users outside a pilot state will se
 - **File format drift.** NCSBE may change CSV columns or file names. Mitigation: the job validates headers and fails loudly.
 - **Municipal elections are mostly in odd years in NC**, so 2026 has few city contests. Expected, not a defect.
 - Census Geocoder has no published SLA. Mitigation: cache results; out-of-state lookups degrade to "no races found" rather than erroring.
+
+## Slice 1 safeguards (from code and security review, 2026-10-03)
+
+- **General elections only.** NCSBE primary rows share contest names across parties (distinguished by `party_contest`); grouping by name would put both parties' candidates on one ballot. Primaries are refused until `party_contest` is part of the race key.
+- **Sub-district parentheticals.** Only `(UNEXPIRED)` and `(SPECIAL)` are ignored when classifying; any other parenthetical (e.g. `(WEST)`) leaves the contest unmatched rather than widening a district seat to a whole county or town.
+- **Malformed input.** Rows whose field count differs from the header are dropped (columns are positional; a shift could publish contact details as a party). More than 10 malformed rows, or an unterminated quote, aborts the run. Party codes outside a known list are stored as null.
+- **Mass withdrawal guard.** A run that would withdraw more than 10% (and more than 5) of an election date's active candidates stops unless `--force` is given. Only `active` candidates are withdrawn; `elected` is never changed. Elections the source stops listing are retired (status `concluded`).
+- **Stale status.** `/api/races` filters on `electionDate >= today` in addition to stored status.
+- **Census lookups** use coordinates rounded to 4 decimals (≈11 m) so the response cache can't be trivially bypassed. Per-IP rate limiting (ADR-006) is still outstanding and should be added at the edge.
 
 ## Open Questions
 

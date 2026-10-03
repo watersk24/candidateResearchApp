@@ -134,6 +134,21 @@ describe("GET /api/races", () => {
     );
   });
 
+  it("excludes elections whose date has passed, even if their stored status is stale", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-03T15:00:00Z"));
+    mockDb.election.findMany.mockResolvedValue([]);
+
+    await GET(makeRequest("districtIds=district-1"));
+
+    expect(mockDb.election.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ electionDate: { gte: new Date("2026-10-03") } }),
+      })
+    );
+    vi.useRealTimers();
+  });
+
   it("excludes withdrawn candidates from results", async () => {
     mockDb.election.findMany.mockResolvedValue([]);
 

@@ -68,7 +68,7 @@ type Candidate = {
   fullName: string;
   party: string | null;
   status: string;
-  isIncumbent: boolean;
+  isIncumbent: boolean | null; // null = unknown
   profileSlug: string;
   hasLimitedData: boolean;
   votingRecords: VotingRecord[];
@@ -286,7 +286,7 @@ export default function ComparisonView({
                     <div key={side} className="px-4 py-3">
                       {c.votingRecords.length === 0 ? (
                         <p className="text-xs text-slate-400">
-                          {c.isIncumbent ? "No records available." : "No prior office held."}
+                          {c.isIncumbent === false ? "No prior office held." : "No records available."}
                         </p>
                       ) : (
                         <div className="space-y-2">
