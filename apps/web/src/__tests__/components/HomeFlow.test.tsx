@@ -10,6 +10,7 @@
  *    renders with the expected location label
  *  - Districts resolve to an empty array -> Dashboard renders with no races
  *    and /api/races is never called
+ *  - A 429 from any lookup -> "error" screen asks the user to wait, not to fix the zip
  *  - A failing/non-ok fetch -> "error" screen shows with the fallback
  *    message, and "Try again" returns to the permission screen
  *  - Zip code path -> /api/geocode then reuses the district/races flow
@@ -37,6 +38,17 @@ function jsonResponse(body: unknown, ok = true) {
     json: () => Promise.resolve(body),
   } as Response);
 }
+
+function rateLimitedResponse() {
+  return Promise.resolve({
+    ok: false,
+    status: 429,
+    json: () => Promise.resolve({ error: "Too many requests" }),
+  } as Response);
+}
+
+const RATE_LIMITED_MESSAGE =
+  "Too many lookups from your network. Please wait a minute and try again.";
 
 const district = {
   id: "d-1",
@@ -162,5 +174,51 @@ describe("HomeFlow", () => {
 
     expect(screen.getByText(/Nashville, TN/)).toBeInTheDocument();
     expect(global.fetch).toHaveBeenNthCalledWith(1, expect.stringContaining("/api/geocode?zip=37201"));
+  });
+
+  it("asks the user to wait when the districts lookup is rate limited", async () => {
+    mockGeolocationSuccess();
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementationOnce(() => rateLimitedResponse());
+
+    const user = userEvent.setup();
+    render(<HomeFlow />);
+
+    await user.click(screen.getByRole("button", { name: "Allow location access" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(RATE_LIMITED_MESSAGE)).toBeInTheDocument();
+    });
+  });
+
+  it("asks the user to wait when the races lookup is rate limited", async () => {
+    mockGeolocationSuccess();
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() => jsonResponse({ districts: [district] }))
+      .mockImplementationOnce(() => rateLimitedResponse());
+
+    const user = userEvent.setup();
+    render(<HomeFlow />);
+
+    await user.click(screen.getByRole("button", { name: "Allow location access" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(RATE_LIMITED_MESSAGE)).toBeInTheDocument();
+    });
+  });
+
+  it("asks the user to wait, not to check the zip code, when geocoding is rate limited", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementationOnce(() => rateLimitedResponse());
+
+    const user = userEvent.setup();
+    render(<HomeFlow />);
+
+    await user.click(screen.getByText("Enter my zip code instead"));
+    await user.type(screen.getByPlaceholderText("12345"), "27858");
+    await user.click(screen.getByRole("button", { name: "Find my races" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(RATE_LIMITED_MESSAGE)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/check the zip code/)).not.toBeInTheDocument();
   });
 });

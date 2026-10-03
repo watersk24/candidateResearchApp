@@ -37,6 +37,10 @@ export type Election = {
   }[];
 };
 
+const RATE_LIMITED_MESSAGE = "Too many lookups from your network. Please wait a minute and try again.";
+
+class RateLimitedError extends Error {}
+
 export default function HomeFlow() {
   const [screen, setScreen] = useState<Screen>("permission");
   const [locationLabel, setLocationLabel] = useState<string>("");
@@ -51,6 +55,7 @@ export default function HomeFlow() {
 
     try {
       const districtRes = await fetch(`/api/districts?lat=${lat}&lng=${lng}`);
+      if (districtRes.status === 429) throw new RateLimitedError();
       if (!districtRes.ok) throw new Error("District resolution failed");
       const districtData = await districtRes.json();
       const resolvedDistricts: ResolvedDistrict[] = districtData.districts;
@@ -66,6 +71,7 @@ export default function HomeFlow() {
       setLoadingMessage("Loading your races...");
       const ids = resolvedDistricts.map((d) => d.id).join(",");
       const racesRes = await fetch(`/api/races?districtIds=${ids}`);
+      if (racesRes.status === 429) throw new RateLimitedError();
       if (!racesRes.ok) throw new Error("Races fetch failed");
       const racesData = await racesRes.json();
 
@@ -73,8 +79,12 @@ export default function HomeFlow() {
       setElections(racesData.elections);
       setLocationLabel(buildLocationLabel(resolvedDistricts));
       setScreen("dashboard");
-    } catch {
-      setErrorMessage("We couldn't load races for your location. Please try again.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof RateLimitedError
+          ? RATE_LIMITED_MESSAGE
+          : "We couldn't load races for your location. Please try again."
+      );
       setScreen("error");
     }
   }
@@ -85,13 +95,18 @@ export default function HomeFlow() {
 
     try {
       const geoRes = await fetch(`/api/geocode?zip=${zip}`);
+      if (geoRes.status === 429) throw new RateLimitedError();
       if (!geoRes.ok) throw new Error("Geocode failed");
       const { lat, lng, label } = await geoRes.json();
       setLocationLabel(label);
       await handleLocationGranted(lat, lng);
       if (label) setLocationLabel(label);
-    } catch {
-      setErrorMessage("We couldn't find races for that zip code. Please check the zip code and try again.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof RateLimitedError
+          ? RATE_LIMITED_MESSAGE
+          : "We couldn't find races for that zip code. Please check the zip code and try again."
+      );
       setScreen("error");
     }
   }

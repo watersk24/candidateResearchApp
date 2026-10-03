@@ -111,7 +111,7 @@ Known limitations:
 - In production, NC imports run daily at 6:00 AM Eastern (Cloud Scheduler → `ingest-races` Cloud Run Job), for the 2026-11-03 general election only; the date must be changed for later elections. See [race import operations](docs/release/race-import-operations.md).
 - Primary elections are not imported yet (party primaries need `party_contest` handling).
 - A correction to a candidate's ballot name creates a new candidate record and withdraws the old one, losing its enrichment data.
-- `/api/districts` and `/api/geocode` have no rate limiting yet (required by ADR-006; planned at the edge, e.g. Cloud Armor).
+- API rate limiting is per server instance and in memory (30 requests/min per IP for `/api/geocode` and `/api/districts`, 120/min for `/api/races` and `/api/candidates`); the Cloud Run instance cap bounds the total. There is no edge protection (e.g. Cloud Armor) yet.
 
 ## Architecture
 
@@ -134,6 +134,8 @@ See `docs/architecture/` for the full technical design and all Architecture Deci
 | `GET` | `/api/districts?lat=&lng=` | Resolve voting districts for a coordinate (Census Geocoder → OCD-IDs) |
 | `GET` | `/api/races?districtIds=` | Get active races for a set of district IDs |
 | `GET` | `/api/candidates/[slug]` | Get full candidate profile by slug |
+
+All endpoints are rate limited per client IP and return `429` with a `Retry-After` header when exceeded (`apps/web/src/lib/rateLimit.ts`).
 
 ## Documentation
 

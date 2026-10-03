@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rateLimit";
 import { resolveDistricts } from "@/lib/districtResolver";
 import { z } from "zod";
 
@@ -8,6 +9,9 @@ const querySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "lookup");
+  if (limited) return limited;
+
   const { searchParams } = request.nextUrl;
 
   const parsed = querySchema.safeParse({

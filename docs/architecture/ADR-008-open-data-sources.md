@@ -121,7 +121,7 @@ Fails the federal-to-local goal, but is what users outside a pilot state will se
 - **Malformed input.** Rows whose field count differs from the header are dropped (columns are positional; a shift could publish contact details as a party). More than 10 malformed rows, or an unterminated quote, aborts the run. Party codes outside a known list are stored as null.
 - **Mass withdrawal guard.** A run that would withdraw more than 10% (and more than 5) of an election date's active candidates stops unless `--force` is given. Only `active` candidates are withdrawn; `elected` is never changed. Elections the source stops listing are retired (status `concluded`).
 - **Stale status.** `/api/races` filters on `electionDate >= today` in addition to stored status.
-- **Census lookups** use coordinates rounded to 4 decimals (≈11 m) so the response cache can't be trivially bypassed. Per-IP rate limiting (ADR-006) is still outstanding and should be added at the edge.
+- **Census lookups** use coordinates rounded to 4 decimals (≈11 m) so the response cache can't be trivially bypassed. Per-IP rate limiting (ADR-006) was added in-app afterwards; see ADR-006.
 
 ## Slice 3: scheduled refresh (2026-10-03)
 

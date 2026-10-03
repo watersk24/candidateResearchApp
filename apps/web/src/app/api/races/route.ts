@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { z } from "zod";
 
@@ -7,6 +8,9 @@ const querySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "data");
+  if (limited) return limited;
+
   const { searchParams } = request.nextUrl;
 
   const parsed = querySchema.safeParse({
