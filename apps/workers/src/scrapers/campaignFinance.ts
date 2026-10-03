@@ -1,17 +1,16 @@
 import { prisma } from "../lib/db.js";
-import { searchCandidate, getCandidateTotals, fecProfileUrl, type FecTotals } from "../lib/fec.js";
-
-export function inferOffice(districtType: string): "H" | "S" | "P" | undefined {
-  const lower = districtType.toLowerCase();
-  if (lower.includes("house") || lower.includes("congressional")) return "H";
-  if (lower.includes("senate")) return "S";
-  if (lower.includes("president")) return "P";
-  return undefined;
-}
+import { getCandidateTotals, fecProfileUrl, type FecTotals } from "../lib/fec.js";
+import { linkedFecId } from "../enrich/fecRefs.js";
 
 export function safePercent(numerator: number, denominator: number): number | null {
-  if (!denominator || denominator === 0) return null;
+  // The FEC omits some fields; never store NaN
+  if (!denominator || !Number.isFinite(numerator) || !Number.isFinite(denominator)) return null;
   return Math.round((numerator / denominator) * 10000) / 100; // two decimal places
+}
+
+// The FEC response is untrusted input; store only finite numbers
+function amount(value: unknown): string | null {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : null;
 }
 
 export function toRecord(totals: FecTotals, candidateId: string, sourceUrl: string) {
@@ -19,8 +18,8 @@ export function toRecord(totals: FecTotals, candidateId: string, sourceUrl: stri
   return {
     candidateId,
     filingPeriod: totals.cycle != null ? totals.cycle.toString() : totals.coverage_end_date ?? "unknown",
-    totalRaised: receipts != null ? receipts.toString() : null,
-    totalSpent: disbursements != null ? disbursements.toString() : null,
+    totalRaised: amount(receipts),
+    totalSpent: amount(disbursements),
     individualDonorPct: safePercent(
       totals.individual_itemized_contributions,
       receipts
@@ -63,33 +62,34 @@ export async function scrapeCampaignFinance(candidateId: string): Promise<void> 
     return;
   }
 
-  const office = inferOffice(candidate.election.district.districtType);
-  const fecCandidate = await searchCandidate(candidate.fullName, office);
+  // Only an FEC ID linked within the candidate's own race is used (ADR-008
+  // Slice 4); a nationwide name search could attach another person's filings.
+  const fecId = await linkedFecId(candidateId);
 
-  if (!fecCandidate) {
+  if (!fecId) {
     console.warn(
-      `[campaignFinance] no FEC candidate found for "${candidate.fullName}"`
+      `[campaignFinance] no linked FEC ID for "${candidate.fullName}"; run FEC linking first`
     );
-    await prisma.candidate.update({
-      where: { id: candidateId },
-      data: { hasLimitedData: true },
-    });
+    // Clear rows from a link that has since been removed, so they stop displaying
+    await prisma.$transaction([
+      prisma.campaignFinanceRecord.deleteMany({ where: { candidateId } }),
+      prisma.candidate.update({
+        where: { id: candidateId },
+        data: { hasLimitedData: true },
+      }),
+    ]);
     return;
   }
 
-  console.log(
-    `[campaignFinance] "${candidate.fullName}" → FEC ID ${fecCandidate.candidate_id}`
-  );
+  console.log(`[campaignFinance] "${candidate.fullName}" → FEC ID ${fecId}`);
 
-  const totals = await getCandidateTotals(fecCandidate.candidate_id);
+  const totals = await getCandidateTotals(fecId);
   if (totals.length === 0) {
-    console.warn(
-      `[campaignFinance] no totals found for FEC ID ${fecCandidate.candidate_id}`
-    );
+    console.warn(`[campaignFinance] no totals found for FEC ID ${fecId}`);
     return;
   }
 
-  const sourceUrl = fecProfileUrl(fecCandidate.candidate_id);
+  const sourceUrl = fecProfileUrl(fecId);
   const records = totals.map((t) => toRecord(t, candidateId, sourceUrl));
 
   await prisma.$transaction([

@@ -3,9 +3,9 @@
  *
  * Covers:
  *  - safePercent(): division with edge cases (Priority 1)
- *  - inferOffice(): districtType string → FEC office code (Priority 1)
  *  - toRecord(): FEC totals → DB record shape (Priority 1)
  *  - scrapeCampaignFinance(): full orchestration with mocked db + FEC (Priority 2)
+ *  - Uses only the FEC ID linked within the candidate's race, never a name search
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -34,10 +34,13 @@ const mockFec = vi.hoisted(() => ({
 
 vi.mock("../../lib/fec.js", () => mockFec);
 
+// ── Linked FEC ID mock ────────────────────────────────────────────────────────
+const mockRefs = vi.hoisted(() => ({ linkedFecId: vi.fn() }));
+vi.mock("../../enrich/fecRefs.js", () => mockRefs);
+
 import {
   scrapeCampaignFinance,
   safePercent,
-  inferOffice,
   toRecord,
 } from "../../scrapers/campaignFinance.js";
 import type { FecTotals } from "../../lib/fec.js";
@@ -113,34 +116,6 @@ describe("safePercent", () => {
   it("handles values greater than 100% (numerator > denominator)", () => {
     // Possible if contributions exceed reported total due to data timing
     expect(safePercent(110, 100)).toBe(110.0);
-  });
-});
-
-// ── inferOffice — pure function ───────────────────────────────────────────────
-describe("inferOffice", () => {
-  it('returns "H" for Congressional District', () => {
-    expect(inferOffice("Congressional District")).toBe("H");
-  });
-
-  it('returns "H" for a districtType containing "house"', () => {
-    expect(inferOffice("US House District 9")).toBe("H");
-  });
-
-  it('returns "S" for a districtType containing "senate"', () => {
-    expect(inferOffice("US Senate")).toBe("S");
-  });
-
-  it('returns "P" for a districtType containing "president"', () => {
-    expect(inferOffice("Presidential Election District")).toBe("P");
-  });
-
-  it("returns undefined for an unrecognised districtType", () => {
-    expect(inferOffice("City Council")).toBeUndefined();
-  });
-
-  it("is case-insensitive", () => {
-    expect(inferOffice("CONGRESSIONAL DISTRICT")).toBe("H");
-    expect(inferOffice("US SENATE")).toBe("S");
   });
 });
 
@@ -238,7 +213,7 @@ describe("scrapeCampaignFinance", () => {
 
     await scrapeCampaignFinance("cand-state-1");
 
-    expect(mockFec.searchCandidate).not.toHaveBeenCalled();
+    expect(mockRefs.linkedFecId).not.toHaveBeenCalled();
     expect(mockDb.$transaction).not.toHaveBeenCalled();
   });
 
@@ -247,13 +222,13 @@ describe("scrapeCampaignFinance", () => {
 
     await scrapeCampaignFinance("nonexistent-id");
 
-    expect(mockFec.searchCandidate).not.toHaveBeenCalled();
+    expect(mockRefs.linkedFecId).not.toHaveBeenCalled();
     expect(mockDb.$transaction).not.toHaveBeenCalled();
   });
 
-  it("marks hasLimitedData when FEC candidate not found", async () => {
+  it("marks hasLimitedData and clears old finance rows when the candidate has no linked FEC ID", async () => {
     mockDb.candidate.findUnique.mockResolvedValue(makeFederalHouseCandidate());
-    mockFec.searchCandidate.mockResolvedValue(null);
+    mockRefs.linkedFecId.mockResolvedValue(null);
     mockDb.candidate.update.mockResolvedValue({});
 
     await scrapeCampaignFinance("cand-1");
@@ -263,15 +238,24 @@ describe("scrapeCampaignFinance", () => {
         data: expect.objectContaining({ hasLimitedData: true }),
       })
     );
-    expect(mockDb.$transaction).not.toHaveBeenCalled();
+    expect(mockDb.campaignFinanceRecord.deleteMany).toHaveBeenCalledWith({ where: { candidateId: "cand-1" } });
+    expect(mockDb.campaignFinanceRecord.createMany).not.toHaveBeenCalled();
+    expect(mockFec.getCandidateTotals).not.toHaveBeenCalled();
+  });
+
+  it("stores null rather than a non-numeric amount from the FEC", async () => {
+    mockDb.candidate.findUnique.mockResolvedValue(makeFederalHouseCandidate());
+    mockRefs.linkedFecId.mockResolvedValue("H0TN09096");
+    mockFec.getCandidateTotals.mockResolvedValue([makeFecTotals({ receipts: "lots" as unknown as number })]);
+
+    await scrapeCampaignFinance("cand-1");
+
+    expect(mockDb.campaignFinanceRecord.createMany.mock.calls[0][0].data[0].totalRaised).toBeNull();
   });
 
   it("returns early without transaction when FEC totals are empty", async () => {
     mockDb.candidate.findUnique.mockResolvedValue(makeFederalHouseCandidate());
-    mockFec.searchCandidate.mockResolvedValue({
-      candidate_id: "H0TN09096",
-      name: "JANE DOE",
-    });
+    mockRefs.linkedFecId.mockResolvedValue("H0TN09096");
     mockFec.getCandidateTotals.mockResolvedValue([]);
 
     await scrapeCampaignFinance("cand-1");
@@ -281,10 +265,7 @@ describe("scrapeCampaignFinance", () => {
 
   it("runs a transaction with deleteMany + createMany + update when totals are found", async () => {
     mockDb.candidate.findUnique.mockResolvedValue(makeFederalHouseCandidate());
-    mockFec.searchCandidate.mockResolvedValue({
-      candidate_id: "H0TN09096",
-      name: "JANE DOE",
-    });
+    mockRefs.linkedFecId.mockResolvedValue("H0TN09096");
     mockFec.getCandidateTotals.mockResolvedValue([makeFecTotals()]);
 
     await scrapeCampaignFinance("cand-1");
@@ -312,22 +293,34 @@ describe("scrapeCampaignFinance", () => {
     expect(mockDb.$transaction).toHaveBeenCalled();
   });
 
-  it("passes the correct office code to searchCandidate based on districtType", async () => {
+  it("fetches totals for the linked FEC ID and never searches by name", async () => {
     mockDb.candidate.findUnique.mockResolvedValue(makeFederalHouseCandidate());
-    mockFec.searchCandidate.mockResolvedValue(null);
-    mockDb.candidate.update.mockResolvedValue({});
+    mockRefs.linkedFecId.mockResolvedValue("H0TN09096");
+    mockFec.getCandidateTotals.mockResolvedValue([makeFecTotals()]);
 
     await scrapeCampaignFinance("cand-1");
 
-    expect(mockFec.searchCandidate).toHaveBeenCalledWith("Jane Doe", "H");
+    expect(mockRefs.linkedFecId).toHaveBeenCalledWith("cand-1");
+    expect(mockFec.getCandidateTotals).toHaveBeenCalledWith("H0TN09096");
+    expect(mockFec.searchCandidate).not.toHaveBeenCalled();
+  });
+
+  it("never stores NaN when the FEC omits a field", async () => {
+    mockDb.candidate.findUnique.mockResolvedValue(makeFederalHouseCandidate());
+    mockRefs.linkedFecId.mockResolvedValue("H0TN09096");
+    mockFec.getCandidateTotals.mockResolvedValue([
+      makeFecTotals({ transfers_from_affiliated_party_committees: undefined as unknown as number }),
+    ]);
+
+    await scrapeCampaignFinance("cand-1");
+
+    const record = mockDb.campaignFinanceRecord.createMany.mock.calls[0][0].data[0];
+    expect(record.partyTransferPct).toBeNull();
   });
 
   it("stores one record per FEC filing cycle", async () => {
     mockDb.candidate.findUnique.mockResolvedValue(makeFederalHouseCandidate());
-    mockFec.searchCandidate.mockResolvedValue({
-      candidate_id: "H0TN09096",
-      name: "JANE DOE",
-    });
+    mockRefs.linkedFecId.mockResolvedValue("H0TN09096");
     mockFec.getCandidateTotals.mockResolvedValue([
       makeFecTotals({ cycle: 2024 }),
       makeFecTotals({ cycle: 2022 }),

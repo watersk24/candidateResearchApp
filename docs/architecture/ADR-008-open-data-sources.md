@@ -52,7 +52,7 @@ interface RaceDataProvider {
 | Provider | Covers | Source |
 |---|---|---|
 | **NC State Board of Elections** (pilot) | Every NC contest: federal, statewide, NC General Assembly, judicial (Supreme Court → District Court), district attorney, county offices and commissioner districts, boards of education, municipal/ward | `Candidate_Listing_2026.csv` (4,527 general-election rows, updated 2026-09-27) |
-| **FEC** (client exists) | All federal House and Senate candidates nationwide | `api.open.fec.gov/v1/candidates/` |
+| **FEC** (client exists) | Every federal House and Senate *filer* nationwide — not the ballot; see Slice 4 | `api.open.fec.gov/v1/candidates/` |
 
 Adding a state, BallotReady, Ballotpedia, or Cicero means one new adapter returning `NormalizedRace` — no schema or UI changes.
 
@@ -98,6 +98,8 @@ See spike results above.
 
 Fails the federal-to-local goal, but is what users outside a pilot state will see.
 
+**Update (Slice 4):** the FEC cannot supply the out-of-state ballot (see below), so users outside a pilot state currently see no races.
+
 ## Consequences
 
 - The `/api/districts` → `/api/races?districtIds=` flow is unchanged in shape; districts are created by ingestion instead of the seed script.
@@ -130,7 +132,33 @@ Fails the federal-to-local goal, but is what users outside a pilot state will se
 - Failures are surfaced, not retried: the job has `--max-retries=0`, and Cloud Monitoring emails on a failed execution (including a mass-withdrawal guard stop) or on a Scheduler trigger error.
 - The election date (`2026-11-03`) is fixed in the job's arguments. Supporting later elections needs either a job update per election or a "next upcoming election" mode in the CLI.
 
+## Slice 4: FEC linking and campaign finance (2026-10-03)
+
+**Finding: the FEC does not record who is on the general-election ballot.** For 2026 it lists 29 North Carolina U.S. Senate filers against 4 on the NCSBE general ballot; NC-01 lists 8 against 3, NC-13 lists 8 against 3. Primary losers stay listed, and the status fields do not separate them (Steven Swinton, on the ballot, has `candidate_status` N; Asa Buck, a primary loser, has C). Using the FEC as the out-of-state race source would show primary losers as ballot candidates, so that plan was dropped.
+
+**Re-scoped slice.** The FEC is used only to enrich candidates already known from a ballot source:
+
+- `linkFecIds` (`apps/workers/src/enrich/linkFec.ts`) fetches the FEC filers for each federal race (state + office + district) and matches ballot names to FEC names (`fecMatch.ts`). Links are `ExternalRef` rows with source `fec`. A wrong link would show one person's fundraising on another's profile, so the rules are conservative:
+  - **Exact** matches (surname plus first name or nickname, e.g. "Don Davis" / DAVIS, DON) link automatically.
+  - **Loose** matches (a 3+-letter short form, "Greg" / GREGORY, or an FEC middle name, "Jack Codiga" / CODIGA, JOHN JACK) could be a relative with the same surname, so they link only if listed in `fecConfirmedLinks.ts`, a committed list of human-checked pairs with the evidence for each. The job reports loose matches as "needs confirmation".
+  - Unrelated nicknames ("Bo" for ROBERT) and misspellings stay unmatched.
+  - Several exact matches with **different** FEC names are ambiguous. Several IDs with the **same** name (one person's earlier campaigns, which report identical totals) are tie-broken by has-raised-funds, incumbent, then most recent filing.
+  - An FEC ID newly matched by two candidates in one race links to neither; a new match for an ID another active candidate in the election already holds is reported, and the holder keeps it.
+  - Existing links are re-checked each run and removed if the FEC no longer lists the ID for the race or the ballot name no longer matches; the candidate's finance rows are then cleared. An empty or cut-off FEC response fails the race instead of unlinking anyone.
+  - One FEC ID can belong to one candidate row. A holder from an earlier election, or a withdrawn holder, gives it up to the current candidate; an active holder in the same election keeps it and the conflict is reported.
+- Incumbency is taken from the linked FEC record (`incumbent_challenge`), filling `Candidate.isIncumbent` for federal candidates.
+- `scrapeCampaignFinance` uses only the linked FEC ID; the nationwide name search is no longer used for enrichment. Totals are per two-year cycle (`election_full=false`), and the profile shows which cycle the money is from, flagging an earlier campaign's totals as not current.
+- `enrichCandidates.ts` runs linking then campaign finance directly, **without BullMQ or Redis**. At pilot scale (42 federal candidates) a sequential Cloud Run Job is simpler and avoids Memorystore's cost (about $35/month minimum). This departs from ADR-003 for now; BullMQ remains the plan if volume grows.
+- FEC requests are paced (1 s per candidate) and retried with backoff on HTTP 429.
+
+**Result on real data (2026-11-03 NC general):** 40 of 42 federal candidates linked (38 exact, 2 confirmed: Greg Murphy and Jack Codiga), every incumbent correctly flagged, 0 ambiguous; a second run changes nothing. Unmatched: Bo Whitehead (FEC: ROBERT W) and Matthew Laszacs (FEC: LASACS); neither has raised funds. 32 candidates have finance totals; the other 8 linked candidates have filed no reports.
+
+**Known limitation:** suffixes (Jr., Sr., II) are ignored when matching, so a father and son running in the same race under the same name would be treated as one person's duplicate FEC IDs.
+
+**Not in this slice:** voting records (they need a Congress.gov bioguide lookup), ratings, and any out-of-state race source.
+
 ## Open Questions
 
 - Should split-precinct ambiguity be resolved by asking for a street address?
 - Retention of concluded elections and their candidates after results are certified.
+- Out-of-state ballots: more state-board adapters, a re-test of Google Civic closer to the election, or a paid provider.

@@ -93,6 +93,7 @@ python main.py
 | `npm run db:seed` | Seed news outlet reference data (`SEED_DEV_FIXTURES=true` adds fictional demo data) |
 | `npm run build:web` | Build Next.js for production |
 | `node --env-file=.env --import tsx/esm apps/workers/src/scripts/ingestRaces.ts ncsbe <YYYY-MM-DD>` | Import NC races and candidates for an election date |
+| `node --env-file=.env --import tsx/esm apps/workers/src/scripts/enrichCandidates.ts <YYYY-MM-DD>` | Link federal candidates to FEC IDs and store campaign finance totals (needs `FEC_API_KEY`) |
 
 ## Data Coverage
 
@@ -102,11 +103,13 @@ Races and candidates come from free public sources behind a provider interface k
 |---|---|
 | North Carolina — US Senate and House, NC Senate and House, statewide appellate courts, county-wide offices, at-large town/city races | **Available** (NCSBE candidate listing) |
 | North Carolina — school boards, district/superior court judges, district attorneys, district- and ward-based local seats, special districts | Planned (needs precinct data — Slice 2) |
-| Federal races outside North Carolina | Planned (FEC — Slice 4) |
+| Federal races outside North Carolina | Not available — the FEC lists every filer, including primary losers, not the ballot ([ADR-008](docs/architecture/ADR-008-open-data-sources.md) Slice 4) |
+| Campaign finance and incumbency for NC federal candidates | **Available** (FEC, linked per race; 40 of 42 candidates) |
 | State and local races outside North Carolina | Not planned yet |
 
 Known limitations:
-- Incumbency is unknown for imported candidates (the NCSBE listing doesn't report it); the UI does not claim either way.
+- Incumbency is known only for federal candidates linked to the FEC; for state and local candidates it is unknown (the NCSBE listing doesn't report it) and the UI does not claim either way.
+- Voting records and ratings are not yet populated in production.
 - Most NC municipal elections are held in odd years, so few city races appear in 2026.
 - In production, NC imports run daily at 6:00 AM Eastern (Cloud Scheduler → `ingest-races` Cloud Run Job), for the 2026-11-03 general election only; the date must be changed for later elections. See [race import operations](docs/release/race-import-operations.md).
 - Primary elections are not imported yet (party primaries need `party_contest` handling).

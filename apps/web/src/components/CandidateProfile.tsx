@@ -363,6 +363,7 @@ export default function CandidateProfile({ candidate }: { candidate: Candidate }
             </EmptyState>
           ) : (
             <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+              <FinanceRow label="Election cycle" value={financeCycleLabel(latestFinance.filingPeriod, candidate.election.electionDate)} />
               <FinanceRow
                 label="Total raised"
                 value={latestFinance.totalRaised ? formatCurrency(latestFinance.totalRaised) : null}
@@ -662,6 +663,18 @@ function SentimentLabel({ score }: { score: number | null }) {
   if (score >= 0.6) return <span className="text-green-700 text-sm font-medium">Positive</span>;
   if (score <= 0.4) return <span className="text-red-600 text-sm font-medium">Negative</span>;
   return <span className="text-slate-600 text-sm font-medium">Neutral</span>;
+}
+
+/**
+ * FEC totals are per two-year cycle. A candidate's most recent cycle can be an
+ * earlier campaign (no filings yet this cycle), which must not read as current.
+ */
+function financeCycleLabel(filingPeriod: string, electionDate: string): string {
+  const electionYear = electionDate.slice(0, 4);
+  if (/^\d{4}$/.test(filingPeriod) && filingPeriod < electionYear) {
+    return `${filingPeriod} (no filings yet for ${electionYear})`;
+  }
+  return filingPeriod;
 }
 
 function FinanceRow({

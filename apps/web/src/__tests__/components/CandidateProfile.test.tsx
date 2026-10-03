@@ -367,6 +367,55 @@ describe("CandidateProfile detail sections", () => {
     expect(screen.getByText("All filings current")).toBeInTheDocument();
   });
 
+  it("labels the election cycle the finance totals come from", () => {
+    render(
+      <CandidateProfile
+        candidate={baseCandidate({
+          campaignFinanceRecords: [
+            {
+              id: "f-1",
+              filingPeriod: "2026",
+              totalRaised: "125000",
+              individualDonorPct: null,
+              pacDonorPct: null,
+              partyTransferPct: null,
+              totalSpent: null,
+              filingComplete: true,
+              sourceUrl: "https://example.com",
+              sourceAvailable: true,
+            },
+          ],
+        }) as never}
+      />
+    );
+    expect(screen.getByText("Election cycle")).toBeInTheDocument();
+    expect(screen.getByText("2026")).toBeInTheDocument();
+  });
+
+  it("flags finance totals from an earlier campaign as not current", () => {
+    render(
+      <CandidateProfile
+        candidate={baseCandidate({
+          campaignFinanceRecords: [
+            {
+              id: "f-1",
+              filingPeriod: "2018",
+              totalRaised: "5855",
+              individualDonorPct: null,
+              pacDonorPct: null,
+              partyTransferPct: null,
+              totalSpent: null,
+              filingComplete: true,
+              sourceUrl: "https://example.com",
+              sourceAvailable: true,
+            },
+          ],
+        }) as never}
+      />
+    );
+    expect(screen.getByText("2018 (no filings yet for 2026)")).toBeInTheDocument();
+  });
+
   it("shows the empty-state text for public statements when there are none", () => {
     render(<CandidateProfile candidate={baseCandidate({ publicStatements: [] }) as never} />);
     expect(screen.getByText(/No public statements found in official records/)).toBeInTheDocument();

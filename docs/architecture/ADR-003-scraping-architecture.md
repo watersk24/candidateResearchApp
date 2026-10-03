@@ -23,6 +23,8 @@ The application is a personal project with a single developer. The pipeline must
 
 ## Decision
 
+> **Update 2026-10-03:** production enrichment for the North Carolina pilot runs as a sequential Cloud Run Job without BullMQ or Redis (see ADR-008, Slice 4). At 42 candidates the queue's cost (Memorystore) isn't justified yet. The BullMQ workers remain in the codebase and are the plan if volume grows.
+
 BullMQ (backed by Redis) is the job queue. Node.js worker processes consume jobs from BullMQ queues and execute all scraping logic. Workers run as separate processes from the Next.js frontend/API server.
 
 ## Options Considered
