@@ -1,7 +1,7 @@
 # ADR-007: District Resolution
 
 **Date:** 2026-06-27
-**Status:** Accepted
+**Status:** Superseded in part by [ADR-008](ADR-008-open-data-sources.md) (2026-10-03) — Cicero is now optional; precinct lookup (pilot states) and the Census Geocoder are primary
 
 ## Context
 
