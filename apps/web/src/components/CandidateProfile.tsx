@@ -297,7 +297,7 @@ export default function CandidateProfile({ candidate }: { candidate: Candidate }
             <EmptyState>
               No voting record available.{" "}
               {candidate.isIncumbent === false
-                ? "This candidate has not previously held office."
+                ? "This candidate does not currently hold this office. Other offices they may have held are not covered."
                 : "No voting record data is available from public sources."}
             </EmptyState>
           ) : (

@@ -194,11 +194,11 @@ describe("ComparisonView", () => {
     );
 
     // Voting record empty state differs by isIncumbent: side A (not an
-    // incumbent) gets "No prior office held.", side B (an incumbent) gets
+    // incumbent) gets "Does not currently hold this office.", side B (an incumbent) gets
     // "No records available." — the same "No records available." text is
     // also used for both sides' empty campaign finance, so it appears 3
     // times total (1 voting + 2 finance).
-    expect(screen.getByText("No prior office held.")).toBeInTheDocument();
+    expect(screen.getByText("Does not currently hold this office.")).toBeInTheDocument();
     expect(screen.getAllByText("No records available.").length).toBe(3);
 
     // Both sides have no legal history or business affiliations — these

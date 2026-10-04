@@ -219,17 +219,17 @@ describe("CandidateProfile voting record", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the non-incumbent empty-state message when isIncumbent is false and there are no votes", () => {
+  it("says a non-incumbent does not hold this office, without claiming they never held any office", () => {
+    // A non-incumbent can be a former official (e.g. a former governor running for Senate)
     render(<CandidateProfile candidate={baseCandidate({ isIncumbent: false, votingRecords: [] }) as never} />);
-    expect(
-      screen.getByText(/This candidate has not previously held office/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/This candidate does not currently hold this office/)).toBeInTheDocument();
+    expect(screen.queryByText(/not previously held office|never held/)).not.toBeInTheDocument();
   });
 
   it("does not claim the candidate never held office when incumbency is unknown (null)", () => {
     render(<CandidateProfile candidate={baseCandidate({ isIncumbent: null, votingRecords: [] }) as never} />);
     expect(screen.getByText(/No voting record data is available from public sources/)).toBeInTheDocument();
-    expect(screen.queryByText(/has not previously held office/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/does not currently hold this office/)).not.toBeInTheDocument();
   });
 
   it("does not show the 'Show all' toggle with 5 or fewer voting records", () => {

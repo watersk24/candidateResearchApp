@@ -286,7 +286,7 @@ export default function ComparisonView({
                     <div key={side} className="px-4 py-3">
                       {c.votingRecords.length === 0 ? (
                         <p className="text-xs text-slate-400">
-                          {c.isIncumbent === false ? "No prior office held." : "No records available."}
+                          {c.isIncumbent === false ? "Does not currently hold this office." : "No records available."}
                         </p>
                       ) : (
                         <div className="space-y-2">
