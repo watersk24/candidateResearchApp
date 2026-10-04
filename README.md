@@ -21,15 +21,17 @@ candidateResearchApp/
 - Node.js 24+
 - Python 3.12+
 - Docker (for local Postgres and Redis)
-- [Cicero API key](https://cicerodata.com) (district resolution — primary)
 - [FEC API key](https://api.data.gov/signup) (federal campaign finance data)
+- [Congress.gov API key](https://api.congress.gov/sign-up/) and [NewsAPI key](https://newsapi.org/) (enrichment scrapers)
+
+District lookup (U.S. Census Geocoder) and North Carolina race data (NC State Board of Elections) are free and need no keys. See [ADR-008](docs/architecture/ADR-008-open-data-sources.md).
 
 ## Local Development Setup
 
 **1. Copy and fill environment variables:**
 ```bash
 cp .env.example .env
-# Fill in CICERO_API_KEY and FEC_API_KEY
+# Fill in FEC_API_KEY, CONGRESS_API_KEY, NEWS_API_KEY
 ```
 
 **2. Start local Postgres and Redis:**
@@ -39,26 +41,38 @@ docker compose -f docker-compose.dev.yml up -d
 
 **3. Install dependencies:**
 ```bash
-npm install
+npm ci
 ```
 
-**4. Run database migrations and seed outlets:**
+> **Lockfile rule:** `package-lock.json` must be generated on Linux (Cloud Shell or WSL). A Windows-generated lockfile omits the Linux build of `@tailwindcss/oxide` and breaks CI, Docker, and Cloud Run builds. On Windows, use `npm ci` (reads the lockfile, never rewrites it) — never `npm install` or editor "quick fixes" that install packages.
+
+**4. Create the schema and seed reference data:**
 ```bash
-npm run db:migrate    # Creates schema in local Postgres
-npm run db:seed       # Seeds the 25 news outlet records
+npm run db:push       # Syncs the Prisma schema to local Postgres
+npm run db:seed       # Seeds the 25 news outlet records (real reference data)
 ```
 
-**5. Start the web app:**
+The seed script also contains **fictional** demo candidates (Austin, TX) and made-up accessibility scores. They load only when `SEED_DEV_FIXTURES=true` is set and must never be loaded into production.
+
+**5. Import real races and candidates (North Carolina):**
+```bash
+node --env-file=.env --import tsx/esm apps/workers/src/scripts/ingestRaces.ts ncsbe 2026-11-03
+```
+Downloads the NCSBE candidate listing and upserts races and candidates. Safe to re-run: existing rows are updated, and candidates no longer listed are marked withdrawn. Contests that need precinct-level data are listed as "unmatched" (see Data Coverage below).
+
+Safety checks: only November general-election dates are accepted (primaries share contest names across parties); rows with the wrong number of fields are skipped, and the run stops if more than 10 are malformed; the run stops if it would withdraw more than 10% of the date's candidates. If such a mass withdrawal is real, re-run with `--force`.
+
+**6. Start the web app:**
 ```bash
 npm run dev:web
 ```
 
-**6. (Optional) Start workers in a second terminal:**
+**7. (Optional) Start workers in a second terminal:**
 ```bash
 npm run dev:workers
 ```
 
-**7. (Optional) Start the Python sentiment service:**
+**8. (Optional) Start the Python sentiment service:**
 ```bash
 cd services/sentiment
 python -m venv .venv
@@ -74,10 +88,33 @@ python main.py
 | `npm run dev:web` | Start Next.js dev server at localhost:3000 |
 | `npm run dev:workers` | Start BullMQ workers with hot reload |
 | `npm run db:generate` | Regenerate Prisma client after schema changes |
-| `npm run db:migrate` | Run pending Prisma migrations |
+| `npm run db:push` | Sync the Prisma schema to the database (the project has no migrations folder yet) |
 | `npm run db:studio` | Open Prisma Studio (visual DB browser) |
-| `npm run db:seed` | Seed news outlet reference data |
+| `npm run db:seed` | Seed news outlet reference data (`SEED_DEV_FIXTURES=true` adds fictional demo data) |
 | `npm run build:web` | Build Next.js for production |
+| `node --env-file=.env --import tsx/esm apps/workers/src/scripts/ingestRaces.ts ncsbe <YYYY-MM-DD>` | Import NC races and candidates for an election date |
+| `node --env-file=.env --import tsx/esm apps/workers/src/scripts/enrichCandidates.ts <YYYY-MM-DD>` | Link federal candidates to FEC IDs and store campaign finance totals (needs `FEC_API_KEY`) |
+
+## Data Coverage
+
+Races and candidates come from free public sources behind a provider interface keyed by Open Civic Data division IDs ([ADR-008](docs/architecture/ADR-008-open-data-sources.md)). Paid providers can be added later as new adapters.
+
+| Area | Status |
+|---|---|
+| North Carolina — US Senate and House, NC Senate and House, statewide appellate courts, county-wide offices, at-large town/city races | **Available** (NCSBE candidate listing) |
+| North Carolina — school boards, district/superior court judges, district attorneys, district- and ward-based local seats, special districts | Planned (needs precinct data — Slice 2) |
+| Federal races outside North Carolina | Not available — the FEC lists every filer, including primary losers, not the ballot ([ADR-008](docs/architecture/ADR-008-open-data-sources.md) Slice 4) |
+| Campaign finance and incumbency for NC federal candidates | **Available** (FEC, linked per race; 40 of 42 candidates) |
+| State and local races outside North Carolina | Not planned yet |
+
+Known limitations:
+- Incumbency is known only for federal candidates linked to the FEC; for state and local candidates it is unknown (the NCSBE listing doesn't report it) and the UI does not claim either way.
+- Voting records and ratings are not yet populated in production.
+- Most NC municipal elections are held in odd years, so few city races appear in 2026.
+- In production, NC imports run daily at 6:00 AM Eastern (Cloud Scheduler → `ingest-races` Cloud Run Job), for the 2026-11-03 general election only; the date must be changed for later elections. See [race import operations](docs/release/race-import-operations.md).
+- Primary elections are not imported yet (party primaries need `party_contest` handling).
+- A correction to a candidate's ballot name creates a new candidate record and withdraws the old one, losing its enrichment data.
+- API rate limiting is per server instance and in memory (30 requests/min per IP for `/api/geocode` and `/api/districts`, 120/min for `/api/races` and `/api/candidates`); the Cloud Run instance cap bounds the total. There is no edge protection (e.g. Cloud Armor) yet.
 
 ## Architecture
 
@@ -96,9 +133,12 @@ See `docs/architecture/` for the full technical design and all Architecture Deci
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/districts?lat=&lng=` | Resolve voting districts for a coordinate |
+| `GET` | `/api/geocode?zip=` | Zip code → coordinate (Zippopotam.us) |
+| `GET` | `/api/districts?lat=&lng=` | Resolve voting districts for a coordinate (Census Geocoder → OCD-IDs) |
 | `GET` | `/api/races?districtIds=` | Get active races for a set of district IDs |
 | `GET` | `/api/candidates/[slug]` | Get full candidate profile by slug |
+
+All endpoints are rate limited per client IP and return `429` with a `Retry-After` header when exceeded (`apps/web/src/lib/rateLimit.ts`).
 
 ## Documentation
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { z } from "zod";
 
@@ -7,6 +8,9 @@ const querySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "data");
+  if (limited) return limited;
+
   const { searchParams } = request.nextUrl;
 
   const parsed = querySchema.safeParse({
@@ -22,10 +26,15 @@ export async function GET(request: NextRequest) {
 
   const { districtIds } = parsed.data;
 
+  // Status is set at import time, so also filter on the date: an election whose
+  // day has passed must not show even if it hasn't been re-imported since.
+  const today = new Date(new Date().toISOString().slice(0, 10));
+
   const elections = await db.election.findMany({
     where: {
       districtId: { in: districtIds },
       status: { in: ["upcoming", "active"] },
+      electionDate: { gte: today },
     },
     include: {
       district: {

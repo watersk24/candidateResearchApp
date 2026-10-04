@@ -1,0 +1,68 @@
+name: PR Checks
+
+# Lightweight pipeline for pull requests targeting main or master.
+# Skips the build job to give faster feedback during code review.
+# The full pipeline (ci.yml, including build) runs on every push.
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+  DATABASE_URL: 'postgresql://dummy:dummy@localhost:5432/dummy'
+
+jobs:
+  lint-and-typecheck:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=prisma/schema.prisma
+
+      - name: Type check apps/web
+        working-directory: apps/web
+        run: npx tsc --noEmit
+
+      - name: Type check apps/workers
+        working-directory: apps/workers
+        run: npx tsc --noEmit
+
+      - name: Lint apps/web
+        run: npm run lint --workspace=apps/web
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=prisma/schema.prisma
+
+      - name: Run all tests
+        run: npm run test

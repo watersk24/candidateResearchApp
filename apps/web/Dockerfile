@@ -4,6 +4,7 @@ FROM node:24-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY apps/web/package.json ./apps/web/
+COPY apps/workers/package.json ./apps/workers/
 COPY package.json package-lock.json ./
 RUN npm ci --workspace=apps/web
 
@@ -11,8 +12,10 @@ RUN npm ci --workspace=apps/web
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
 COPY apps/web ./apps/web
 COPY prisma ./prisma
+
 RUN npx prisma generate --schema=prisma/schema.prisma
 RUN npm run build --workspace=apps/web
 

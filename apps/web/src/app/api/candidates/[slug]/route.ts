@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const limited = rateLimit(request, "data");
+  if (limited) return limited;
+
   const { slug } = await params;
 
   const candidate = await db.candidate.findUnique({

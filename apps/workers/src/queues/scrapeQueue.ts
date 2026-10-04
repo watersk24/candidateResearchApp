@@ -1,14 +1,14 @@
 import { Queue } from "bullmq";
-import { redis } from "../lib/redis.js";
+import { bullmqConnection } from "../lib/redis.js";
 
 export type ScrapeJobData = {
   candidateId: string;
-  jobType: "voting_record" | "campaign_finance" | "news_sentiment" | "full_refresh";
+  jobType: "voting_record" | "campaign_finance" | "news_sentiment" | "compute_ratings" | "full_refresh";
 };
 
 export function createScrapeQueue() {
   return new Queue<ScrapeJobData>("candidate-scrape", {
-    connection: redis,
+    connection: bullmqConnection,
     defaultJobOptions: {
       attempts: 3,
       backoff: { type: "exponential", delay: 5000 },

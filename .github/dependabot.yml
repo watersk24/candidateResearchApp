@@ -1,0 +1,25 @@
+version: 2
+
+updates:
+  # Monitor all npm workspaces from the repo root.
+  # Dependabot follows npm workspace resolution and will open PRs for
+  # root, apps/web, and apps/workers dependencies.
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Batch minor and patch bumps into a single PR to reduce noise.
+      # Major version updates open individual PRs so they can be reviewed separately.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Keep GitHub Actions versions current.
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

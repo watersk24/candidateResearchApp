@@ -1,0 +1,15 @@
+FROM node:24-alpine AS base
+
+FROM base AS deps
+WORKDIR /app
+COPY apps/workers/package.json ./apps/workers/
+COPY package.json package-lock.json ./
+RUN npm ci --workspace=apps/workers
+
+FROM base AS runner
+WORKDIR /app
+RUN apk add --no-cache postgresql-client
+COPY --from=deps /app/node_modules ./node_modules
+COPY prisma ./prisma
+
+CMD ["sh", "-c", "npx prisma db push --schema=prisma/schema.prisma --skip-generate && psql \"$DATABASE_URL\" -c 'CREATE EXTENSION IF NOT EXISTS postgis;'"]

@@ -41,7 +41,7 @@ export default function ZipCodeFallback({ onSubmit, onBack }: Props) {
 
         <h1 className="text-2xl font-semibold text-slate-900 mb-2">Enter your zip code</h1>
         <p className="text-slate-500 text-sm mb-6">
-          We'll use this to find all races in your area. Your zip code is not stored.
+          We&apos;ll use this to find all races in your area. Your zip code is not stored.
         </p>
 
         <form onSubmit={handleSubmit} noValidate>

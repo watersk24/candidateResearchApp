@@ -1,0 +1,10 @@
+# Keep host artifacts and secrets out of Docker build contexts.
+# node_modules must be installed inside the (Linux) image, never copied from the host.
+**/node_modules
+**/.next
+**/dist
+**/coverage
+.git
+.env
+.env.*
+!.env.example

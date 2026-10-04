@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rateLimit";
 import { resolveDistricts } from "@/lib/districtResolver";
 import { z } from "zod";
 
@@ -8,6 +9,9 @@ const querySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "lookup");
+  if (limited) return limited;
+
   const { searchParams } = request.nextUrl;
 
   const parsed = querySchema.safeParse({
@@ -28,7 +32,8 @@ export async function GET(request: NextRequest) {
     const districts = await resolveDistricts(lat, lng);
     return NextResponse.json({ lat, lng, districts });
   } catch (error) {
-    console.error("District resolution error:", error);
+    // Message only: fetch errors can carry the request URL, which contains the user's coordinates
+    console.error("District resolution error:", error instanceof Error ? error.message : "unknown error");
     return NextResponse.json(
       { error: "Failed to resolve districts for the given coordinates" },
       { status: 500 }

@@ -25,6 +25,15 @@ Start by understanding the business problem and process before proposing product
 
 ---
 
+## Project Conventions (established decisions)
+
+- Stack and hosting are selected; see `docs/architecture/ADR-*.md` (Next.js, Prisma/PostgreSQL+PostGIS, BullMQ workers, GCP Cloud Run in `us-east1`).
+- **`package-lock.json` must only be generated on Linux** (Cloud Shell or WSL). A Windows-generated lockfile drops Linux native binaries (`@tailwindcss/oxide`) and breaks CI, Docker, and Cloud Run builds. On Windows use `npm ci`; make dependency changes with `npm install <pkg> -w <workspace>` from Linux.
+- **Race and candidate data must not be hard-wired to one vendor** (ADR-008). New sources are adapters implementing `RaceDataProvider` (`apps/workers/src/ingest/types.ts`), keyed by Open Civic Data division IDs. North Carolina is the pilot state.
+- `prisma/seed.ts` fixtures beyond news outlets are fictional and load only with `SEED_DEV_FIXTURES=true`; never in production.
+
+---
+
 ## Core Development Philosophy
 
 This project follows a fully agentic development process.
